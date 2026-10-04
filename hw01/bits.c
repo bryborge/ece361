@@ -1,22 +1,44 @@
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "bits.h"
 
 #define REGISTER_SIZE 32
 
+static bool invalid_bounds(int pos, int width) {
+    return pos < 0 || width <= 0;
+}
+
+static bool starts_outside_register(int pos) {
+    return pos >= REGISTER_SIZE;
+}
+
+static bool runs_past_register(int pos, int width) {
+    return width > REGISTER_SIZE - pos;
+}
+
+static uint32_t low_mask(int width) {
+    return (width >= REGISTER_SIZE) ? ~0u : (1u << width) - 1;
+}
+
 uint32_t get_field(uint32_t word, int pos, int width) {
-    // Guard: reject negative positions and negative or zero widths.
-    if (pos < 0 || width <= 0) return 0;
+    if (invalid_bounds(pos, width)) return 0;
+    if (starts_outside_register(pos)) return 0;
+    if (runs_past_register(pos, width)) width = REGISTER_SIZE - pos;
 
-    // Guard: Reject positions outside the register size.
-    if (pos >= REGISTER_SIZE) return 0;
-
-    // Guard: Clamp the width to prevent reading past the register.
-    if (pos + width >= REGISTER_SIZE) width = REGISTER_SIZE - pos;
-
-    // Extraction logic
     uint32_t shifted_word = word >> pos;
-    uint32_t mask = (width >= REGISTER_SIZE) ? ~0u : (1u << width) - 1;
 
-    return shifted_word & mask;
+    return shifted_word & low_mask(width);
+}
+
+uint32_t set_field(uint32_t word, int pos, int width, uint32_t value) {
+    if (invalid_bounds(pos, width)) return word;
+    if (runs_past_register(pos, width)) return word;
+
+    uint32_t mask = low_mask(width);
+    uint32_t clean_value = value & mask;
+    uint32_t shifted_mask = mask << pos;
+    uint32_t shifted_value = clean_value << pos;
+
+    return (word & ~shifted_mask) | shifted_value;
 }
