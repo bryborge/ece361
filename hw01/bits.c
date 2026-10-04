@@ -47,3 +47,17 @@ uint32_t set_field(uint32_t word, int pos, int width, uint32_t value)
     uint32_t m = low_mask(width);
     return (word & ~(m << pos)) | ((value & m) << pos);
 }
+
+int32_t sign_extend(uint32_t value, int width)
+{
+    if (!width_ok(width)) {
+        return 0;
+    }
+    uint32_t m = low_mask(width);
+    uint32_t v = value & m;
+    if (v & (1u << (width - 1))) {
+        v |= ~m;
+    }
+    /* Implementation-defined above INT32_MAX; gcc wraps modulo 2^32. */
+    return v;
+}

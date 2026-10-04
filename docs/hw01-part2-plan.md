@@ -57,8 +57,8 @@ ROOT  bits.h / bits.c: print_binary, get_field, set_field, sign_extend  (+ forma
 |  |  +- C1a  One `static uint32_t low_mask(int width)` helper (not: inline in each function)
 |  |  +- C1b  Validity: `static bool` helpers, checks ordered so the sum cannot overflow
 |  |         (not: guard clauses, int64_t widening, macro)
-|  +- C2  sign_extend: mask, OR in ~mask if the sign bit is set, cast to int32_t
-|  |                                                          (not: negate-by-hand, no cast)
+|  +- C2  sign_extend: mask, OR in ~mask if the sign bit is set, return converts to int32_t
+|  |                                                          (not: negate-by-hand, explicit cast)
 |  +- C3  Constants: enum { WORD_BITS = 32 } and static const uint32_t ALL_ONES in bits.c;
 |         public enum BIN_BUF_SIZE in bits.h                   (not: #define, UINT32_MAX)
 |
@@ -149,7 +149,7 @@ Public functions:
 
 1. `get_field`: if `!field_ok`, return 0. Otherwise `(word >> pos) & low_mask(width)`.
 2. `set_field`: if `!field_ok`, return `word`. Otherwise `m = low_mask(width)`, result `(word & ~(m << pos)) | ((value & m) << pos)`.
-3. `sign_extend`: if `!width_ok`, return 0. Otherwise `m = low_mask(width)`, `v = value & m`; if `v & (1u << (width - 1))` then `v |= ~m`; return `(int32_t)v`.
+3. `sign_extend`: if `!width_ok`, return 0. Otherwise `m = low_mask(width)`, `v = value & m`; if `v & (1u << (width - 1))` then `v |= ~m`; return `v`. The return converts it to `int32_t`; an explicit `(int32_t)` cast would compile to the same code, so it is left out.
 4. `format_binary`:
    - if `size < 1`, return without writing;
    - `buf[0] = '\0'`;
@@ -271,7 +271,7 @@ Be able to say these out loud:
 - What `get_field` returns at width 32, and why `1u << 32` is the tricky case.
 - Why `1u` and not `1`, and why shifts are done on unsigned values.
 - Why the validity check is ordered, and what happens with `INT_MAX` arguments.
-- Why `sign_extend` ends with a cast, why that is implementation-defined, and what `sign_extend(0x80000000u, 32)` returns.
+- Why `sign_extend`'s return converts to `int32_t`, why that is implementation-defined, and what `sign_extend(0x80000000u, 32)` returns.
 - Why `format_binary` exists and why an empty string means failure.
 - Walk through `print_binary(0x2C, 6)` and its output.
 - What `-I.` does, why the test needs it, and the tradeoff against `#include "../bits.h"` (Section 3).
@@ -284,7 +284,7 @@ Modify drills (change one thing by hand, then say what breaks):
 
 ## 10. Risks and open notes
 
-- `sign_extend` relies on gcc's wraparound for the final cast. Documented, and the `INT32_MIN` test covers it.
+- `sign_extend` relies on gcc's wraparound for the final conversion. Documented, and the `INT32_MIN` test covers it.
 - `status.h` must not appear in the Makefile before it exists.
 - `format_binary` makes the library five functions, not the handout's four. The README must explain it; the four required functions still behave as specified.
 - `strcmp` and `-I.` are the only things outside the slides. `strcmp` appears only in tests; `-I.` appears only in the Makefile.

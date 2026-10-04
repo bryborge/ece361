@@ -1,4 +1,5 @@
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 
 #include "bits.h"
@@ -79,10 +80,41 @@ static void test_set_field(void)
     CHECK(set_field(0x12345678u, INT_MAX, INT_MAX, 0xFFFFFFFFu) == 0x12345678u);
 }
 
+static void test_sign_extend(void)
+{
+    /* Handout */
+    CHECK(sign_extend(0xF8u, 8) == -8);
+
+    /* Positive */
+    CHECK(sign_extend(0x7Fu, 8) == 127);
+
+    /* Most negative */
+    CHECK(sign_extend(0x80u, 8) == -128);
+    CHECK(sign_extend(0x80000000u, 32) == INT32_MIN);
+
+    /* Others */
+    CHECK(sign_extend(0xFFFFFFFFu, 32) == -1);
+    CHECK(sign_extend(0x7FFFFFFFu, 32) == INT32_MAX);
+
+    /* Width 1 */
+    CHECK(sign_extend(1u, 1) == -1);
+    CHECK(sign_extend(0u, 1) == 0);
+
+    /* Value too wide */
+    CHECK(sign_extend(0x1F8u, 8) == -8);
+    CHECK(sign_extend(0x100u, 8) == 0);
+
+    /* Reject */
+    CHECK(sign_extend(0xFFu, 0) == 0);
+    CHECK(sign_extend(0xFFu, 33) == 0);
+    CHECK(sign_extend(0xFFu, -1) == 0);
+}
+
 int main(void)
 {
     test_get_field();
     test_set_field();
+    test_sign_extend();
 
     printf("%d run, %d failed\n", total, fails);
     return fails != 0;
