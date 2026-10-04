@@ -20,6 +20,10 @@ static int fails;
     }                                                                  \
 } while (0)
 
+/**
+ * Exercises get_field() across single-bit, multi-bit, and full-word fields,
+ * plus truncation and invalid-bounds cases.
+ */
 static void check_get_field(void) {
     // Single bit at each end of the word.
     CHECK(get_field(0x1u, 0, 1) == 1u);
@@ -45,6 +49,11 @@ static void check_get_field(void) {
     CHECK(get_field(0xFFFFFFFFu, 32, 1) == 0u);
 }
 
+/**
+ * Exercises set_field() across single-bit, multi-bit, and full-word writes,
+ * plus value truncation and invalid-bounds cases that leave the word
+ * unchanged.
+ */
 static void check_set_field(void) {
     // Single bit at each end of the word.
     CHECK(set_field(0u, 0, 1, 1u) == 0x1u);
@@ -71,6 +80,10 @@ static void check_set_field(void) {
     CHECK(set_field(0x12345678u, 32, 1, 0xFFFFFFFFu) == 0x12345678u);
 }
 
+/**
+ * Exercises sign_extend() across positive and negative values at various
+ * widths, plus value truncation, width clamping, and invalid-bounds cases.
+ */
 static void check_sign_extend(void) {
     // Width 1: the only bit is the sign bit.
     CHECK(sign_extend(0u, 1) == 0);
@@ -98,7 +111,17 @@ static void check_sign_extend(void) {
     CHECK(sign_extend(0xFFu, -1) == 0);
 }
 
-// Returns whether print_binary(x, width) writes exactly `expected` to stdout.
+/**
+ * Helper function for `check_print_binary`.
+ *
+ * Captures print_binary(x, width)'s stdout output and checks it matches
+ * `expected` exactly.
+ *
+ * @param x        Value to print.
+ * @param width    Number of low bits to print.
+ * @param expected Exact expected output, including the trailing newline.
+ * @return `true` if the captured output matches `expected`.
+ */
 static bool prints_binary(uint32_t x, int width, const char *expected) {
     // glibc's fmemopen only NUL-terminates after a write, so an empty output
     // would otherwise leave buf as garbage.
@@ -117,6 +140,10 @@ static bool prints_binary(uint32_t x, int width, const char *expected) {
     return matches;
 }
 
+/**
+ * Exercises print_binary() across nibble grouping, value truncation, width
+ * clamping, and invalid-width cases.
+ */
 static void check_print_binary(void) {
     // Single nibble, MSB first.
     CHECK(prints_binary(0x5u, 4, "0101\n"));
@@ -141,6 +168,9 @@ static void check_print_binary(void) {
     CHECK(prints_binary(0xFFu, -1, ""));
 }
 
+/**
+ * Prints a summary of checks run and how many of those checks failed.
+ */
 static void print_summary(void) {
     printf("\nSummary:\n");
     printf("--------\n");
@@ -148,6 +178,11 @@ static void print_summary(void) {
     printf("%d failed\n", fails);
 }
 
+/**
+ * The main test loop. Runs all checks and prints a summary.
+ *
+ * @return `0` if every check passed, `1` if any failed.
+ */
 int main(void) {
     check_get_field();
     check_set_field();
