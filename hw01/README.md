@@ -1,19 +1,26 @@
-# Homework 1
+# ECE 361 HW1
 
-A Bit-manipulation library.
+## Part 2: bit-manipulation library
 
-## Testing `print_binary`
+`bits.h` and `bits.c` provide the four Part 2 functions (`get_field`, `set_field`, `sign_extend`, `print_binary`) plus one extra public helper, `format_binary`.
 
-### Helper function to capture/validate stdout
+### Contract
 
-The assignment explicitly states that the `print_binary` function should have the signature: `void print_binary(uint32_t x, int width)`. I considered changing the signature so that print_binary returns a value, so that it might be simpler to use with the proposed test template, but I opted out of that so that I could stay true to the intent behind the function's name. Below is a list of design choices I made to implement a helper function that captures stdout/stderr so that it can be tested in a nearly similar way as the other functions in this library:
+Bits are numbered from 0, the least significant bit. Constants: `WORD_BITS` = 32.
 
-- `capture_print_binary` swaps `stdout`/`stderr` for `fmemopen` streams, calls `print_binary`, and restores them.
-- Direct assignment (`stdout = mem`). The usual redirect works at the operating-system level, but a memory stream exists only inside the C library, so the OS can't send output to it. Works on Linux and macOS; the C standard doesn't guarantee it.
-- `_POSIX_C_SOURCE` defined in the test so that `bits.c` stays strict C11.
-- Streams opened and closed per call, so no state leaks. `fclose` flushes, so no `fflush`.
-- Buffers zeroed; 64 bytes fits every tested output.
-- `fmemopen` NULL exits with an error. With a fixed mode and buffer, only out-of-memory (`ENOMEM`) can cause this.
-- Error cases check `stderr` is non-empty
+| Function | Valid input | On invalid input |
+|----------|-------------|------------------|
+| `uint32_t get_field(uint32_t word, int pos, int width)` | width 1..32, pos 0..31, pos + width <= 32 | returns 0 |
+| `uint32_t set_field(uint32_t word, int pos, int width, uint32_t value)` | same as `get_field` | returns `word` unchanged |
+| `int32_t sign_extend(uint32_t value, int width)` | width 1..32 | returns 0 |
+| `void format_binary(char *buf, int size, uint32_t x, int width)` | width 1..32 and size >= width + (width - 1) / 4 + 1 | if size >= 1, `buf` is `""`; if size < 1, nothing is written |
+| `void print_binary(uint32_t x, int width)` | width 1..32 | prints nothing |
 
-I considered moving the helper function and data struct to its own helper file, but it didn't seem necessary yet (nothing else would use it), so following YAGNI principle, I opted to hold off on that kind of clean up refactor.
+Rules shared by all functions:
+
+- Bits of `x`, `value` or `word` outside the selected width or field are ignored (or, for `set_field`, left unchanged in `word`).
+- Rejection is silent. The caller cannot tell a rejected `get_field` from a legitimate 0; this is accepted and documented.
+- Any `int` is allowed as an argument, including negative values and `INT_MAX`. No input causes undefined behavior.
+- `print_binary` prints no newline. Groups of four from the right, separated by a space, no padding: `print_binary(0x2C, 8)` prints `0010 1100`; width 6 prints `10 1100`.
+- `sign_extend` converts a `uint32_t` above `INT32_MAX` to `int32_t`. In C that conversion is implementation-defined, not undefined; gcc wraps modulo 2^32. This code assumes that behavior.
+- `format_binary` is not required by the handout. It exists so the string logic can be tested, because the test program cannot read its own stdout.
