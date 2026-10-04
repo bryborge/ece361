@@ -38,3 +38,12 @@ uint32_t get_field(uint32_t word, int pos, int width)
     }
     return (word >> pos) & low_mask(width);
 }
+
+uint32_t set_field(uint32_t word, int pos, int width, uint32_t value)
+{
+    if (!field_ok(pos, width)) {
+        return word;
+    }
+    uint32_t m = low_mask(width);
+    return (word & ~(m << pos)) | ((value & m) << pos);
+}

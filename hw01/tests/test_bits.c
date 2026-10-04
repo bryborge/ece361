@@ -48,9 +48,41 @@ static void test_get_field(void)
     CHECK(get_field(0xFFFFFFFFu, 0, INT_MIN) == 0u);
 }
 
+static void test_set_field(void)
+{
+    /* Slide example */
+    CHECK(set_field(0xB6C5u, 4, 4, 3u) == 0xB635u);
+
+    /* Value too wide */
+    CHECK(set_field(0xFFFFFF0Fu, 4, 4, 0x1F5u) == 0xFFFFFF5Fu);
+
+    /* Width 1, pos 31 */
+    CHECK(set_field(0u, 31, 1, 1u) == 0x80000000u);
+    CHECK(set_field(0xFFFFFFFFu, 31, 1, 0u) == 0x7FFFFFFFu);
+
+    /* Width 1, value 2 */
+    CHECK(set_field(0xFFFFFFFFu, 0, 1, 2u) == 0xFFFFFFFEu);
+
+    /* Width 32 */
+    CHECK(set_field(0x12345678u, 0, 32, 0xDEADBEEFu) == 0xDEADBEEFu);
+
+    /* Round trip */
+    CHECK(get_field(set_field(0u, 12, 8, 0xABu), 12, 8) == 0xABu);
+    CHECK(set_field(0u, 12, 8, 0xABu) == 0x000AB000u);
+
+    /* Reject */
+    CHECK(set_field(0x12345678u, 0, 0, 0xFFFFFFFFu) == 0x12345678u);
+    CHECK(set_field(0x12345678u, 0, 33, 0xFFFFFFFFu) == 0x12345678u);
+    CHECK(set_field(0x12345678u, -1, 1, 0xFFFFFFFFu) == 0x12345678u);
+    CHECK(set_field(0x12345678u, 32, 1, 0xFFFFFFFFu) == 0x12345678u);
+    CHECK(set_field(0x12345678u, 28, 5, 0xFFFFFFFFu) == 0x12345678u);
+    CHECK(set_field(0x12345678u, INT_MAX, INT_MAX, 0xFFFFFFFFu) == 0x12345678u);
+}
+
 int main(void)
 {
     test_get_field();
+    test_set_field();
 
     printf("%d run, %d failed\n", total, fails);
     return fails != 0;
