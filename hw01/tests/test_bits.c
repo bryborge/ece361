@@ -66,6 +66,33 @@ static void check_set_field(void) {
     CHECK(set_field(0x12345678u, 32, 1, 0xFFFFFFFFu) == 0x12345678u);
 }
 
+static void check_sign_extend(void) {
+    // Width 1: the only bit is the sign bit.
+    CHECK(sign_extend(0u, 1) == 0);
+    CHECK(sign_extend(1u, 1) == -1);
+
+    // Multi-bit fields, up to full word. Sign bit clear is positive, set is
+    // negative.
+    CHECK(sign_extend(0x7Fu, 8) == 127);
+    CHECK(sign_extend(0xF8u, 8) == -8);
+    CHECK(sign_extend(0x80u, 8) == -128);
+    CHECK(sign_extend(0x800u, 12) == -2048);
+    CHECK(sign_extend(0x40000000u, 31) == -0x40000000);
+    CHECK(sign_extend(0x7FFFFFFFu, 32) == INT32_MAX);
+    CHECK(sign_extend(0x80000000u, 32) == INT32_MIN);
+
+    // Value bits above the width are dropped.
+    CHECK(sign_extend(0x100u, 8) == 0);
+
+    // Width above 32 is treated as 32.
+    CHECK(sign_extend(0x80000000u, 33) == INT32_MIN);
+    CHECK(sign_extend(0x80000000u, INT_MAX) == INT32_MIN);
+
+    // Width below 1 returns 0.
+    CHECK(sign_extend(0xFFu, 0) == 0);
+    CHECK(sign_extend(0xFFu, -1) == 0);
+}
+
 static void print_summary(void) {
     printf("\nSummary:\n");
     printf("--------\n");
@@ -76,6 +103,7 @@ static void print_summary(void) {
 int main(void) {
     check_get_field();
     check_set_field();
+    check_sign_extend();
 
     print_summary();
 

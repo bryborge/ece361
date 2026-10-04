@@ -42,3 +42,20 @@ uint32_t set_field(uint32_t word, int pos, int width, uint32_t value) {
 
     return (word & ~shifted_mask) | shifted_value;
 }
+
+int32_t sign_extend(uint32_t value, int width) {
+    if (width <= 0) return 0;
+    if (width >= REGISTER_SIZE) return value;
+
+    uint32_t value_mask = (1u << width) - 1;
+    uint32_t clean_value = value & value_mask;
+
+    uint32_t sign_bit = 1u << (width - 1);
+
+    if (clean_value & sign_bit) {
+        uint32_t extension_mask = ~0u << width;
+        clean_value |= extension_mask;
+    }
+
+    return clean_value;
+}
