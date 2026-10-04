@@ -1,5 +1,6 @@
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "bits.h"
 
@@ -58,4 +59,18 @@ int32_t sign_extend(uint32_t value, int width) {
     }
 
     return clean_value;
+}
+
+void print_binary(uint32_t x, int width) {
+    if (width <= 0) return;
+    if (width > REGISTER_SIZE) width = REGISTER_SIZE;
+
+    for (int i = width - 1; i >= 0; i--) {
+        uint32_t bit = (x >> i) & 1u;
+        printf("%u", bit);
+
+        // space-delimited nibbles, and don't add an extra space at the end
+        if ((i % 4 == 0) && (i != 0)) printf(" ");
+    }
+    printf("\n");
 }

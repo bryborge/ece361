@@ -1,4 +1,9 @@
+// fmemopen is POSIX, hidden by -std=c11 without this.
+#define _POSIX_C_SOURCE 200809L
+
+#include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 #include <limits.h>
 
 #include "bits.h"
@@ -93,6 +98,49 @@ static void check_sign_extend(void) {
     CHECK(sign_extend(0xFFu, -1) == 0);
 }
 
+// Returns whether print_binary(x, width) writes exactly `expected` to stdout.
+static bool prints_binary(uint32_t x, int width, const char *expected) {
+    // glibc's fmemopen only NUL-terminates after a write, so an empty output
+    // would otherwise leave buf as garbage.
+    char buf[64] = {0};
+    FILE *mem = fmemopen(buf, sizeof buf, "w");
+    if (mem == NULL) return false;
+
+    FILE *saved_stdout = stdout;
+    stdout = mem;
+    print_binary(x, width);
+    fflush(mem);
+    stdout = saved_stdout;
+
+    bool matches = strcmp(buf, expected) == 0;
+    fclose(mem);
+    return matches;
+}
+
+static void check_print_binary(void) {
+    // Single nibble, MSB first.
+    CHECK(prints_binary(0x5u, 4, "0101\n"));
+
+    // Nibbles are space-separated, with no trailing space.
+    CHECK(prints_binary(0xB6C5u, 16, "1011 0110 1100 0101\n"));
+    CHECK(prints_binary(0xDEADBEEFu, 32,
+                        "1101 1110 1010 1101 1011 1110 1110 1111\n"));
+
+    // Nibbles are grouped from the LSB, so a partial group leads.
+    CHECK(prints_binary(0x1Fu, 5, "1 1111\n"));
+
+    // Value bits above the width are dropped.
+    CHECK(prints_binary(0xF5u, 4, "0101\n"));
+
+    // Width above 32 is treated as 32.
+    CHECK(prints_binary(0x80000000u, 33,
+                        "1000 0000 0000 0000 0000 0000 0000 0000\n"));
+
+    // Width below 1 prints nothing.
+    CHECK(prints_binary(0xFFu, 0, ""));
+    CHECK(prints_binary(0xFFu, -1, ""));
+}
+
 static void print_summary(void) {
     printf("\nSummary:\n");
     printf("--------\n");
@@ -104,6 +152,7 @@ int main(void) {
     check_get_field();
     check_set_field();
     check_sign_extend();
+    check_print_binary();
 
     print_summary();
 
