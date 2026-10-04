@@ -171,6 +171,11 @@ int main(void)
     test_sign_extend();
     test_format_binary();
 
+    /* Not a PASS/FAIL check: stdout cannot be read back, so this is for the eye. */
+    printf("demo: print_binary(0x2C, 8) -> ");
+    print_binary(0x2Cu, 8);
+    putchar('\n');
+
     printf("%d run, %d failed\n", total, fails);
     return fails != 0;
 }

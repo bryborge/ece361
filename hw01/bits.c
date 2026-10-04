@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stdio.h>
 
 #include "bits.h"
 
@@ -83,4 +84,11 @@ void format_binary(char *buf, int size, uint32_t x, int width)
         }
     }
     buf[n] = '\0';
+}
+
+void print_binary(uint32_t x, int width)
+{
+    char buf[BIN_BUF_SIZE];
+    format_binary(buf, BIN_BUF_SIZE, x, width);
+    printf("%s", buf);
 }
