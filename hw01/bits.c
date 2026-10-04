@@ -61,3 +61,26 @@ int32_t sign_extend(uint32_t value, int width)
     /* Implementation-defined above INT32_MAX; gcc wraps modulo 2^32. */
     return v;
 }
+
+void format_binary(char *buf, int size, uint32_t x, int width)
+{
+    if (size < 1) {
+        return;
+    }
+    buf[0] = '\0';
+    if (!width_ok(width)) {
+        return;
+    }
+    int needed = width + (width - 1) / 4 + 1;
+    if (size < needed) {
+        return;
+    }
+    int n = 0;
+    for (int i = width - 1; i >= 0; i--) {
+        buf[n++] = '0' + ((x >> i) & 1u);
+        if (i > 0 && i % 4 == 0) {
+            buf[n++] = ' ';
+        }
+    }
+    buf[n] = '\0';
+}

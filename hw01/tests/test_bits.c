@@ -1,6 +1,7 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "bits.h"
 
@@ -110,11 +111,65 @@ static void test_sign_extend(void)
     CHECK(sign_extend(0xFFu, -1) == 0);
 }
 
+static const char SENTINEL = '#';
+
+/*
+ * Runs format_binary on a sentinel-filled buffer and returns the buffer.
+ * The last byte stays '\0' so the buffer is a valid string even if
+ * format_binary writes nothing.
+ */
+static const char *format(int size, uint32_t x, int width)
+{
+    static char buf[BIN_BUF_SIZE];
+    for (int i = 0; i < BIN_BUF_SIZE - 1; i++) {
+        buf[i] = SENTINEL;
+    }
+    buf[BIN_BUF_SIZE - 1] = '\0';
+    format_binary(buf, size, x, width);
+    return buf;
+}
+
+static void test_format_binary(void)
+{
+    /* Handout */
+    CHECK(strcmp(format(BIN_BUF_SIZE, 0x2Cu, 8), "0010 1100") == 0);
+
+    /* Odd width */
+    CHECK(strcmp(format(BIN_BUF_SIZE, 0x2Cu, 6), "10 1100") == 0);
+    CHECK(strcmp(format(BIN_BUF_SIZE, 0x16u, 5), "1 0110") == 0);
+
+    /* Width 1 */
+    CHECK(strcmp(format(BIN_BUF_SIZE, 1u, 1), "1") == 0);
+    CHECK(strcmp(format(BIN_BUF_SIZE, 2u, 1), "0") == 0);
+
+    /* Width 32 */
+    CHECK(strcmp(format(BIN_BUF_SIZE, 0x80000001u, 32),
+                 "1000 0000 0000 0000 0000 0000 0000 0001") == 0);
+    CHECK(strcmp(format(BIN_BUF_SIZE, 0xFFFFFFFFu, 32),
+                 "1111 1111 1111 1111 1111 1111 1111 1111") == 0);
+
+    /* Bits above width ignored */
+    CHECK(strcmp(format(BIN_BUF_SIZE, 0x12Cu, 8), "0010 1100") == 0);
+
+    /* Reject */
+    CHECK(strcmp(format(BIN_BUF_SIZE, 0x2Cu, 0), "") == 0);
+    CHECK(strcmp(format(BIN_BUF_SIZE, 0x2Cu, 33), "") == 0);
+    CHECK(strcmp(format(BIN_BUF_SIZE, 0x2Cu, -1), "") == 0);
+
+    /* Buffer sizes for width 8, which needs 10 */
+    CHECK(strcmp(format(10, 0x2Cu, 8), "0010 1100") == 0);
+    CHECK(format(10, 0x2Cu, 8)[10] == SENTINEL);
+    CHECK(strcmp(format(9, 0x2Cu, 8), "") == 0);
+    CHECK(strcmp(format(1, 0x2Cu, 8), "") == 0);
+    CHECK(format(0, 0x2Cu, 8)[0] == SENTINEL);
+}
+
 int main(void)
 {
     test_get_field();
     test_set_field();
     test_sign_extend();
+    test_format_binary();
 
     printf("%d run, %d failed\n", total, fails);
     return fails != 0;

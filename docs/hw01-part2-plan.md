@@ -209,7 +209,7 @@ Why each choice is explainable without notes: `1u` and unsigned shifts avoid und
 - Width 32: `0x80000001u` gives `"1000 0000 0000 0000 0000 0000 0000 0001"`; `0xFFFFFFFFu` gives eight `1111` groups
 - Bits above width ignored: `(0x12C, 8)` gives `"0010 1100"`
 - Reject: width 0, 33, -1 give `""`
-- Buffer sizes for width 8 (needs 10): size 10 works; size 9 gives `""`; size 1 gives `""`; size 0 leaves a sentinel byte untouched. Use sentinel-filled buffers.
+- Buffer sizes for width 8 (needs 10): size 10 works and leaves byte 10 as the sentinel (catches an off-by-one overrun); size 9 gives `""`; size 1 gives `""`; size 0 leaves a sentinel byte untouched. Use sentinel-filled buffers.
 
 `print_binary`
 - One labeled demo line printed by the test program, for example `print_binary(0x2C, 8) -> 0010 1100`. Not counted as PASS/FAIL; the README says so.
