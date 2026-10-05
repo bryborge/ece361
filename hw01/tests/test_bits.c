@@ -1,3 +1,5 @@
+// Tests for bits.c (Part 2) and status.c (Part 3).
+
 // fmemopen is POSIX, hidden by -std=c11 without this.
 #define _POSIX_C_SOURCE 200809L
 
@@ -7,6 +9,7 @@
 #include <limits.h>
 
 #include "bits.h"
+#include "status.h"
 
 static int total;
 static int fails;
@@ -169,6 +172,111 @@ static void check_print_binary(void) {
 }
 
 /**
+ * Exercises status_unpack() on the spec's worked example, each invalid mode,
+ * setpoint boundaries, all-zero and all-one words, a word with the reserved
+ * bit set, and each flag set alone.
+ */
+static void check_status_unpack(void) {
+    // Spec's worked example: AUTO, heater on, set point 22.
+    CHECK(status_unpack(0x1631u).heat == true);
+    CHECK(status_unpack(0x1631u).cool == false);
+    CHECK(status_unpack(0x1631u).fan == false);
+    CHECK(status_unpack(0x1631u).fault == false);
+    CHECK(status_unpack(0x1631u).mode == MODE_AUTO);
+    CHECK(status_unpack(0x1631u).setpoint == 22);
+
+    // Invalid modes 5 to 7 come back as their raw values.
+    CHECK(status_unpack(0x0050u).heat == false);
+    CHECK(status_unpack(0x0050u).cool == false);
+    CHECK(status_unpack(0x0050u).fan == false);
+    CHECK(status_unpack(0x0050u).fault == false);
+    CHECK(status_unpack(0x0050u).mode == 5);
+    CHECK(status_unpack(0x0050u).setpoint == 0);
+
+    CHECK(status_unpack(0x0060u).heat == false);
+    CHECK(status_unpack(0x0060u).cool == false);
+    CHECK(status_unpack(0x0060u).fan == false);
+    CHECK(status_unpack(0x0060u).fault == false);
+    CHECK(status_unpack(0x0060u).mode == 6);
+    CHECK(status_unpack(0x0060u).setpoint == 0);
+
+    CHECK(status_unpack(0x0070u).heat == false);
+    CHECK(status_unpack(0x0070u).cool == false);
+    CHECK(status_unpack(0x0070u).fan == false);
+    CHECK(status_unpack(0x0070u).fault == false);
+    CHECK(status_unpack(0x0070u).mode == 7);
+    CHECK(status_unpack(0x0070u).setpoint == 0);
+
+    // All four flags set, without leaking into mode or set point.
+    CHECK(status_unpack(0x000Fu).heat == true);
+    CHECK(status_unpack(0x000Fu).cool == true);
+    CHECK(status_unpack(0x000Fu).fan == true);
+    CHECK(status_unpack(0x000Fu).fault == true);
+    CHECK(status_unpack(0x000Fu).mode == MODE_OFF);
+    CHECK(status_unpack(0x000Fu).setpoint == 0);
+
+    // All-zero word.
+    CHECK(status_unpack(0x0000u).heat == false);
+    CHECK(status_unpack(0x0000u).cool == false);
+    CHECK(status_unpack(0x0000u).fan == false);
+    CHECK(status_unpack(0x0000u).fault == false);
+    CHECK(status_unpack(0x0000u).mode == MODE_OFF);
+    CHECK(status_unpack(0x0000u).setpoint == 0);
+
+    // All-one word: invalid mode 7, set point -1, reserved bit ignored.
+    CHECK(status_unpack(0xFFFFu).heat == true);
+    CHECK(status_unpack(0xFFFFu).cool == true);
+    CHECK(status_unpack(0xFFFFu).fan == true);
+    CHECK(status_unpack(0xFFFFu).fault == true);
+    CHECK(status_unpack(0xFFFFu).mode == 7);
+    CHECK(status_unpack(0xFFFFu).setpoint == -1);
+
+    // Set point at each end of the 8-bit two's complement range.
+    CHECK(status_unpack(0x7F00u).heat == false);
+    CHECK(status_unpack(0x7F00u).cool == false);
+    CHECK(status_unpack(0x7F00u).fan == false);
+    CHECK(status_unpack(0x7F00u).fault == false);
+    CHECK(status_unpack(0x7F00u).mode == MODE_OFF);
+    CHECK(status_unpack(0x7F00u).setpoint == 127);
+
+    CHECK(status_unpack(0x8000u).heat == false);
+    CHECK(status_unpack(0x8000u).cool == false);
+    CHECK(status_unpack(0x8000u).fan == false);
+    CHECK(status_unpack(0x8000u).fault == false);
+    CHECK(status_unpack(0x8000u).mode == MODE_OFF);
+    CHECK(status_unpack(0x8000u).setpoint == -128);
+
+    // The worked example with reserved bit 7 set decodes identically.
+    CHECK(status_unpack(0x16B1u).heat == true);
+    CHECK(status_unpack(0x16B1u).cool == false);
+    CHECK(status_unpack(0x16B1u).fan == false);
+    CHECK(status_unpack(0x16B1u).fault == false);
+    CHECK(status_unpack(0x16B1u).mode == MODE_AUTO);
+    CHECK(status_unpack(0x16B1u).setpoint == 22);
+
+    // Each flag alone, so a flag that reads a neighbor's bit is caught.
+    CHECK(status_unpack(0x0001u).heat == true);
+    CHECK(status_unpack(0x0001u).cool == false);
+    CHECK(status_unpack(0x0001u).fan == false);
+    CHECK(status_unpack(0x0001u).fault == false);
+
+    CHECK(status_unpack(0x0002u).heat == false);
+    CHECK(status_unpack(0x0002u).cool == true);
+    CHECK(status_unpack(0x0002u).fan == false);
+    CHECK(status_unpack(0x0002u).fault == false);
+
+    CHECK(status_unpack(0x0004u).heat == false);
+    CHECK(status_unpack(0x0004u).cool == false);
+    CHECK(status_unpack(0x0004u).fan == true);
+    CHECK(status_unpack(0x0004u).fault == false);
+
+    CHECK(status_unpack(0x0008u).heat == false);
+    CHECK(status_unpack(0x0008u).cool == false);
+    CHECK(status_unpack(0x0008u).fan == false);
+    CHECK(status_unpack(0x0008u).fault == true);
+}
+
+/**
  * Prints a summary of checks run and how many of those checks failed.
  */
 static void print_summary(void) {
@@ -188,6 +296,7 @@ int main(void) {
     check_set_field();
     check_sign_extend();
     check_print_binary();
+    check_status_unpack();
 
     print_summary();
 
