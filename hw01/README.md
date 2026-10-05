@@ -62,3 +62,61 @@ valid positions and widths within a 32-bit word. Each function's contract:
 - Requires `width >= 1`. If violated, prints nothing, not even a newline.
 - `width` above `32` is clamped to `32`, since there are no more bits to
   print.
+
+## Part 3: The thermostat status word
+
+> In `status.h` and `status.c`, define a `status_t` struct with one member per
+> field, and write `status_t status_unpack(uint16_t word)`.
+
+| Bits | Field | Meaning |
+|------|-------|---------|
+| 0     | HEAT     | 1 = heater on |
+| 1     | COOL     | 1 = compressor on |
+| 2     | FAN      | 1 = fan on |
+| 3     | FAULT    | 1 = fault detected |
+| 6..4  | MODE     | 0 = OFF, 1 = HEAT, 2 = COOL, 3 = AUTO, 4 = FAN_ONLY; 5..7 are invalid |
+| 7     | reserved | must be 0 |
+| 15..8 | SETPOINT | set point in °C, 8-bit two's complement (-128..127) |
+
+### What is this?
+
+`status_unpack` decodes a 16-bit thermostat status word into a `status_t`,
+using Part 2's `get_field` and `sign_extend`. `status.h` also defines
+`MODE_OFF`, `MODE_HEAT`, `MODE_COOL`, `MODE_AUTO`, and `MODE_FAN_ONLY`, so
+callers can compare `mode` against names instead of numbers.
+
+| Member | Type | Decoded from |
+|--------|------|--------------|
+| `heat`     | `bool`    | bit 0 |
+| `cool`     | `bool`    | bit 1 |
+| `fan`      | `bool`    | bit 2 |
+| `fault`    | `bool`    | bit 3 |
+| `mode`     | `int`     | bits 6..4, raw value 0..7 |
+| `setpoint` | `int32_t` | bits 15..8, sign-extended to -128..127 |
+
+For example, `status_unpack(0x1631)` returns the heater on, the compressor,
+fan, and fault off, `mode == MODE_AUTO` (3), and a set point of 22 °C.
+
+### Build and test
+
+Same commands as Part 2. `make test` runs the `status_unpack` checks in the
+same binary, after the Part 2 checks.
+
+### Input ranges and boundary behavior
+
+Every `uint16_t` is a valid input. `status_unpack` has no error return and
+always fills every member.
+
+**Invalid mode (5..7)**
+- `mode` holds the raw value of bits 6..4, including 5, 6, and 7. There is no
+  separate validity flag: a mode is valid when `mode <= MODE_FAN_ONLY`.
+- Keeping the raw value means nothing in the word is lost, and validity is a
+  single comparison the caller makes when it needs it.
+
+**Reserved bit (bit 7)**
+- Never read, and `status_t` has no member for it. A word with bit 7 set
+  decodes to exactly the same fields as the same word with it clear.
+
+**Set point**
+- All 256 values of the 8-bit field are valid: `0x7F` is 127 °C, `0x80` is
+  -128 °C, and `0xFF` is -1 °C.
