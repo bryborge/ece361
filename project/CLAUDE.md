@@ -19,7 +19,7 @@ Weekly plan is in ASSIGNMENT.md section 8. Work only at the current week's stage
 
 - Standard is `gcc -std=c11 -Wall -Wextra`, zero warnings, and clean under `-fsanitize=address,undefined`.
 - `make` builds `garage`, `make test` builds and runs every test and ends with one pass/fail count line, `make clean` removes everything built.
-- `iom361_r4.h` and `iom361_r4.c` are copied in from Canvas and never modified. A suspected bug goes to Agora, not into the file.
+- The Canvas download lives in `iom361_r4/` (built with `-Iiom361_r4`) and is never modified. A suspected bug goes to Agora, not into the file.
 
 ## Module boundaries
 
