@@ -1,8 +1,8 @@
 # CLAUDE.md
 
-Garage door opener, the ECE 361 final project (project 7, device type C, key K2, second structure S1, report Q5). [ASSIGNMENT.md](ASSIGNMENT.md) is the professor's spec and the source of truth for behavior, deliverables, and tests. Read it before designing anything. Do not edit it.
+Garage door opener, the ECE 361 final project. [ASSIGNMENT.md](ASSIGNMENT.md) is the professor's spec and the source of truth for behavior, deliverables, and tests. Read it before designing anything. Do **NOT** edit it.
 
-Code for this project lives only in `project/`. Sibling folders (`hw01`, `hw02`, ...) are weekly homework.
+Code for this project lives only in `project/`. Sibling folders (`hw01`, `hw02`, ...) are weekly homework. As the term progresses, the homework folders will contain relevant material to be used here.
 
 ## Where we are
 

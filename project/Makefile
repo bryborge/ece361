@@ -6,7 +6,7 @@ OBJS = $(SRCS:%.c=build/%.o)
 
 all: garage
 
-garage: $(OBJS)
+build: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
 build/%.o: %.c
