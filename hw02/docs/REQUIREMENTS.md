@@ -153,7 +153,7 @@ Not in the PDF. Derived by reading `readings.c` against `data/` and `expected/`:
 
 ## 5. How the work is done
 
-Rule for every step: `make && sh regress.sh` passes before moving on. If it fails, the step is wrong, not the expected file. `expected/`, `data/`, and `regress.sh` are not edited.
+Rule for every step: `make && sh regress.sh` passes before moving on. If it fails, the step is wrong, not the expected file. `expected/` and `data/` are not edited, and `regress.sh` changes only in the path of the program it runs (`build/readings`, decision 3).
 
 Review and version control:
 
@@ -162,7 +162,7 @@ Review and version control:
 - The student reads, edits, and asks questions as they like. Work on the next step starts only after the student says to continue; the student commits on their own schedule.
 - Edits the student makes during review are the new baseline. The implementer builds on them and does not revert them.
 
-Current state: the existing `Makefile` builds `build/readings` from `readings.c` with `-fsanitize=address`, and `regress.sh` runs `build/readings`. Baseline passes (4 of 4).
+Starting state: the starter files plus a `Makefile` that builds `build/readings` with `-fsanitize=address`, and `regress.sh` edited to run `build/readings`. Baseline passes (4 of 4).
 
 1. **stats module, max first.** Create `stats.h`/`stats.c` with `stats_max`. Add `stats.c` to the Makefile. In `readings.c`, replace `max_temp(0)` with `stats_max(temps, count)` and delete `max_temp`. Regress.
 2. **stats: min, mean, both series.** Add `stats_min` and `stats_mean`. Replace both loops in `readings.c` with three calls each. Regress (this is where the float trap bites).
