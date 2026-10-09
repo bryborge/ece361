@@ -27,3 +27,22 @@ float stats_mean(const float a[], int n) {
         sum += a[i];
     return sum / n;
 }
+
+struct stats_run stats_longest_run_above(const float a[], int n, float threshold) {
+    struct stats_run best = {0, -1};
+    int run = 0, start = 0;
+    for (int i = 0; i < n; i++) {
+        if (a[i] > threshold) {
+            if (run == 0)
+                start = i;
+            run++;
+            if (run > best.length) {
+                best.length = run;
+                best.start = start;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    return best;
+}
