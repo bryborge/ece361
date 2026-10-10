@@ -209,7 +209,7 @@ The 10,000-value array is a local `static float` inside the test function or a l
 ## 6. Decisions
 
 1. **Second result: struct, not pointer.** `reading_read` returns `struct reading_counts`, `stats_longest_run_above` returns `struct stats_run`. Defensible with what has been taught so far, and small to change to out-pointers if HW3 calls for it. Arrays passed to `reading_read` are still filled through array decay (a pointer underneath); be ready to say so on Shine.
-2. **ASan: keep during implementation, decide at the end.** `-fsanitize=address` stays in `CFLAGS` while refactoring because it catches out-of-bounds reads that can still print correct output. When implementation is complete, the student is asked specifically whether to remove it (step 11). Risk to weigh then: the grader's machine may lack the ASan runtime, which would fail the build. It is never used for the bonus `depth.c` measurements, since ASan changes frame sizes and code generation.
+2. **ASan: kept for submission.** `-fsanitize=address` stays in `CFLAGS`. Decided at step 11, after the final check showed the code builds and passes with and without it. Accepted risk: if the grader's machine lacks the ASan runtime, the link fails. It is never used for the bonus `depth.c` measurements, since ASan changes frame sizes and code generation.
 3. **Program location: `build/readings`.** The assignment says `make` builds `readings`; the Makefile and `regress.sh` already use `build/readings`. Keep `build/`, and `README.md` says so so the Shine grader runs the right path.
 4. **`readings.c` goes away.** It is not in the deliverable list and becomes `main.c` in step 6. Git history keeps the original.
 
