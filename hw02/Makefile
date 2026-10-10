@@ -13,6 +13,11 @@ build/%.o: %.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+build/main.o:      main.c reading.h stats.h histogram.h
+build/reading.o:   reading.c reading.h
+build/stats.o:     stats.c stats.h
+build/histogram.o: histogram.c histogram.h
+
 clean:
 	rm -rf build/
 
