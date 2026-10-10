@@ -185,14 +185,14 @@ build/main.o:       main.c reading.h stats.h histogram.h
 build/reading.o:    reading.c reading.h
 build/stats.o:      stats.c stats.h
 build/histogram.o:  histogram.c histogram.h
-build/test_stats.o: tests/test_stats.c stats.h
+build/tests/test_stats.o: tests/test_stats.c stats.h
 ```
 
-The existing pattern rule `build/%.o: %.c` keeps supplying the recipe; these lines only add prerequisites. The test object needs its own rule (source is under `tests/`) and `-I.` to find `stats.h`.
+The existing pattern rule `build/%.o: %.c` keeps supplying the recipe; these lines only add prerequisites. The test object goes in `build/tests/`, so the same pattern rule compiles it, and `test_stats.c` includes `"../stats.h"`, so no `-I` flag is needed.
 
 ### 5.2 Unit tests
 
-A small `check(name, condition)` helper that prints `PASS  name` or `FAIL  name` (matching `regress.sh` style) and counts failures; `main` prints `N passed, M failed` and returns 1 if any failed.
+The same `CHECK(cond)` macro as `hw01/tests/test_bits.c`: it prints `(PASS) Test: <cond>` or `(FAIL) Test: <cond> (line N)` and counts into two `static` file-scope counters, `total` and `fails`. `main` prints a summary and returns 1 if any check failed. The counters are a deliberate exception to Rule 1: they are test scaffolding, not program code, and match the student's hw01 style.
 
 | Test | Input | Expect |
 |---|---|---|
