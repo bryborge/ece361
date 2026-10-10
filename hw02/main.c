@@ -1,5 +1,5 @@
 /*
- * readings.c: ECE 361, Fall 2026, HW2 starter
+ * main.c: ECE 361, Fall 2026, HW2
  *
  * Reads sensor readings from standard input and prints a summary: the number
  * of readings, the minimum, maximum, and mean temperature and humidity, the
@@ -11,12 +11,11 @@
  * Blank lines and lines starting with '#' are ignored. A line that does not
  * hold three numbers is counted as skipped.
  *
- * Usage: ./readings [threshold] < data/normal.txt
+ * Usage: build/readings [threshold] < data/normal.txt
  *        threshold is in degrees C, default 30.0
  *
- * The program works. It is also one file, with global variables, repeated
- * code, and a main() that does everything. HW2 asks you to split it into
- * modules without changing what it prints.
+ * main handles the command line and printing; reading, stats, and histogram
+ * do the work. The readings live here and are passed to the modules.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,14 +26,12 @@
 
 #define MAX_READINGS 1000
 
-int   ticks[MAX_READINGS];
-float temps[MAX_READINGS];
-float hums[MAX_READINGS];
-int   count = 0;
-int   skipped = 0;
-float threshold = 30.0f;
-
 int main(int argc, char *argv[]) {
+    int   ticks[MAX_READINGS];
+    float temps[MAX_READINGS];
+    float hums[MAX_READINGS];
+    float threshold = 30.0f;
+
     if (argc > 2) {
         fprintf(stderr, "usage: %s [threshold] < readings.txt\n", argv[0]);
         return 1;
@@ -49,28 +46,26 @@ int main(int argc, char *argv[]) {
     }
 
     struct reading_counts c = reading_read(ticks, temps, hums, MAX_READINGS);
-    count = c.count;
-    skipped = c.skipped;
 
-    printf("readings: %d\n", count);
-    printf("skipped:  %d\n", skipped);
-    if (count == 0) {
+    printf("readings: %d\n", c.count);
+    printf("skipped:  %d\n", c.skipped);
+    if (c.count == 0) {
         printf("no readings, no summary\n");
         return 0;
     }
 
     printf("temperature: min %6.1f  max %6.1f  mean %6.2f C\n",
-           stats_min(temps, count), stats_max(temps, count), stats_mean(temps, count));
+           stats_min(temps, c.count), stats_max(temps, c.count), stats_mean(temps, c.count));
     printf("humidity:    min %6.1f  max %6.1f  mean %6.2f %%RH\n",
-           stats_min(hums, count), stats_max(hums, count), stats_mean(hums, count));
+           stats_min(hums, c.count), stats_max(hums, c.count), stats_mean(hums, c.count));
 
-    struct stats_run r = stats_longest_run_above(temps, count, threshold);
+    struct stats_run r = stats_longest_run_above(temps, c.count, threshold);
     if (r.length == 0)
         printf("above %.1f C: never\n", threshold);
     else
         printf("above %.1f C: longest run %d readings, from tick %d to tick %d\n",
                threshold, r.length, ticks[r.start], ticks[r.start + r.length - 1]);
 
-    histogram_print(temps, count);
+    histogram_print(temps, c.count);
     return 0;
 }

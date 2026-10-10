@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -std=c11 -Wall -Wextra -fsanitize=address
 
-SRCS = readings.c reading.c stats.c histogram.c
+SRCS = main.c reading.c stats.c histogram.c
 OBJS = $(SRCS:%.c=build/%.o)
 
 all build: build/readings
