@@ -7,7 +7,10 @@
 ## What I used it for
 
 - Reading the assignment and `readings.c` and writing a requirements and plan document, `docs/REQUIREMENTS.md`: what to refactor, the module interfaces, and the order of work.
-- Implementing the refactor one step at a time. After each step I reviewed the code, asked questions about it, and committed it myself.
+- Implementing the refactor one step at a time, in the order the plan gives: the stats module, the histogram module, the reading module, moving the globals into `main`, the Makefile header dependencies, and the unit tests. After each step I reviewed the code, asked questions about it, and committed it myself.
+- Explaining choices I had to make: returning two results in a struct or through a pointer, and whether to keep `-fsanitize=address` in the build.
+- Drafting this file and `README.md`.
+- I chose the test style myself: `tests/test_stats.c` uses the same `CHECK` macro and `static` counters as my hw01 tests. The model first wrote a different style without looking at hw01.
 
 ## What it got wrong
 
