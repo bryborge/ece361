@@ -75,28 +75,8 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    /* temperature: min and mean */
-    float tmin = temps[0];
-    float tsum = 0.0f;
-    for (int i = 0; i < count; i++) {
-        if (temps[i] < tmin)
-            tmin = temps[i];
-        tsum += temps[i];
-    }
-    printf("temperature: min %6.1f  max %6.1f  mean %6.2f C\n", tmin, stats_max(temps, count), tsum / count);
-
-    /* humidity: min, max, and mean, the same loop again */
-    float hmin = hums[0];
-    float hmax = hums[0];
-    float hsum = 0.0f;
-    for (int i = 0; i < count; i++) {
-        if (hums[i] < hmin)
-            hmin = hums[i];
-        if (hums[i] > hmax)
-            hmax = hums[i];
-        hsum += hums[i];
-    }
-    printf("humidity:    min %6.1f  max %6.1f  mean %6.2f %%RH\n", hmin, hmax, hsum / count);
+    printf("temperature: min %6.1f  max %6.1f  mean %6.2f C\n", stats_min(temps, count), stats_max(temps, count), stats_mean(temps, count));
+    printf("humidity:    min %6.1f  max %6.1f  mean %6.2f %%RH\n", stats_min(hums, count), stats_max(hums, count), stats_mean(hums, count));
 
     /* longest run of consecutive readings above the threshold */
     int run = 0, best = 0, best_start = -1, start = 0;
