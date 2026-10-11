@@ -53,6 +53,41 @@ static void check_ignores_values_past_n(void) {
     CHECK(stats_mean(a, 3) == 3.0f);
 }
 
+static int run_is(struct stats_run r, int length, int start) {
+    return r.length == length && r.start == start;
+}
+
+static void check_run_none(void) {
+    float below[] = {1.0f, 2.0f, 3.0f};
+    CHECK(run_is(stats_longest_run_above(below, 3, 5.0f), 0, -1));
+
+    float equal[] = {5.0f, 5.0f};
+    CHECK(run_is(stats_longest_run_above(equal, 2, 5.0f), 0, -1));
+
+    CHECK(run_is(stats_longest_run_above(below, 0, 0.0f), 0, -1));
+}
+
+static void check_run_at_ends(void) {
+    float start[] = {9.0f, 9.0f, 1.0f, 9.0f};
+    CHECK(run_is(stats_longest_run_above(start, 4, 5.0f), 2, 0));
+
+    float end[] = {9.0f, 1.0f, 9.0f, 9.0f};
+    CHECK(run_is(stats_longest_run_above(end, 4, 5.0f), 2, 2));
+
+    float all[] = {9.0f, 9.0f, 9.0f};
+    CHECK(run_is(stats_longest_run_above(all, 3, 5.0f), 3, 0));
+}
+
+static void check_run_tie_keeps_first(void) {
+    float a[] = {9.0f, 9.0f, 1.0f, 9.0f, 9.0f};
+    CHECK(run_is(stats_longest_run_above(a, 5, 5.0f), 2, 0));
+}
+
+static void check_run_ignores_values_past_n(void) {
+    float a[] = {9.0f, 1.0f, 9.0f, 9.0f, 9.0f};
+    CHECK(run_is(stats_longest_run_above(a, 2, 5.0f), 1, 0));
+}
+
 static void print_summary(void) {
     printf("\nSummary:\n");
     printf("--------\n");
@@ -62,11 +97,17 @@ static void print_summary(void) {
 }
 
 int main(void) {
+    // statistics
     check_one_value();
     check_max_at_ends();
     check_min_at_ends();
     check_mean();
     check_ignores_values_past_n();
+    // longest run
+    check_run_none();
+    check_run_at_ends();
+    check_run_tie_keeps_first();
+    check_run_ignores_values_past_n();
 
     print_summary();
 

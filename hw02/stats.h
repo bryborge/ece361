@@ -28,4 +28,21 @@ float stats_min(const float arr[], int n);
  */
 float stats_mean(const float arr[], int n);
 
+/**
+ * A run of consecutive values in an array: its length and the index of its
+ * first value.
+ */
+struct stats_run {
+    int length;
+    int start;
+};
+
+/**
+ * Given an array of values, the number of valid values in it, and a
+ * threshold, returns the longest run of consecutive values in the array
+ * (0..n-1) strictly greater than the threshold. The array must hold at least n
+ * elements. Assumes n >= 0.
+ */
+struct stats_run stats_longest_run_above(const float arr[], int n, float th);
+
 #endif
