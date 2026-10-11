@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -std=c11 -Wall -Wextra -fsanitize=address
 
-SRCS = readings.c
+SRCS = readings.c stats.c
 OBJS = $(SRCS:%.c=build/%.o)
 
 all build: build/readings
@@ -9,11 +9,21 @@ all build: build/readings
 build/readings: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
+build/test_stats: build/tests/test_stats.o build/stats.o
+	$(CC) $(CFLAGS) -o $@ $^
+
+test: build/test_stats build/readings
+	build/test_stats
+	sh regress.sh
+
 build/%.o: %.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+build/stats.o: stats.c stats.h
+build/tests/test_stats.o: tests/test_stats.c stats.h
+
 clean:
 	rm -rf build/
 
-.PHONY: all build clean
+.PHONY: all build clean test

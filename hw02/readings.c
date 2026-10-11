@@ -22,6 +22,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "stats.h"
+
 #define MAX_READINGS 1000
 #define LINE_LEN     128
 #define NUM_BINS     20          /* histogram: 0 to 100 C in 5 C bins */
@@ -33,14 +35,6 @@ float hums[MAX_READINGS];
 int   count = 0;
 int   skipped = 0;
 float threshold = 30.0f;
-
-/* largest temperature from index i to the end, recursively */
-float max_temp(int i) {
-    if (i == count - 1)
-        return temps[i];
-    float rest = max_temp(i + 1);
-    return temps[i] > rest ? temps[i] : rest;
-}
 
 int main(int argc, char *argv[]) {
     char line[LINE_LEN];
@@ -89,7 +83,7 @@ int main(int argc, char *argv[]) {
             tmin = temps[i];
         tsum += temps[i];
     }
-    printf("temperature: min %6.1f  max %6.1f  mean %6.2f C\n", tmin, max_temp(0), tsum / count);
+    printf("temperature: min %6.1f  max %6.1f  mean %6.2f C\n", tmin, stats_max(temps, count), tsum / count);
 
     /* humidity: min, max, and mean, the same loop again */
     float hmin = hums[0];
