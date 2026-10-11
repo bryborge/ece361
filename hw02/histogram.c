@@ -12,19 +12,20 @@
 #define BIN_WIDTH 5.0f
 
 /**
- * Returns the bin that temp_c falls in. Values outside 0..100 C are clamped
- * to the first or last bin.
+ * Returns the bin that temp_c falls in. Values outside 0..100 C, including
+ * infinities, are clamped to the first or last bin; NaN goes in the first.
  *
- * @param temp_c Temperature (not NaN; within the range of an int).
+ * @param temp_c Temperature.
  * @return The bin index (0..NUM_BINS-1).
  */
 static int bin_index(float temp_c) {
-    int b = (int) (temp_c / BIN_WIDTH);
+    // Clamp before converting: an out-of-range or NaN float to int conversion
+    // is undefined. Written as !(>=) so that NaN, which fails every
+    // comparison, lands here too.
+    if (!(temp_c >= 0.0f)) return 0;
+    if (temp_c >= NUM_BINS * BIN_WIDTH) return NUM_BINS - 1;
 
-    if (temp_c < 0.0f) b = 0;
-    if (b >= NUM_BINS) b = NUM_BINS - 1;
-
-    return b;
+    return (int) (temp_c / BIN_WIDTH);
 }
 
 /**

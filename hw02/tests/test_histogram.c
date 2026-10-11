@@ -1,6 +1,7 @@
 // fmemopen is POSIX, hidden by -std=c11 without this.
 #define _POSIX_C_SOURCE 200809L
 
+#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -77,6 +78,18 @@ static void check_clamps_to_end_bins(void) {
                            "   95.0 to 100.0 C | ** 2\n"));
 }
 
+static void check_clamps_non_finite_and_huge(void) {
+    float low[] = {NAN, -INFINITY, -1e30f};
+    CHECK(prints_histogram(low, 3,
+                           "histogram:\n"
+                           "    0.0 to   5.0 C | *** 3\n"));
+
+    float high[] = {INFINITY, 1e30f};
+    CHECK(prints_histogram(high, 2,
+                           "histogram:\n"
+                           "   95.0 to 100.0 C | ** 2\n"));
+}
+
 static void check_skips_empty_bins(void) {
     float a[] = {41.0f, 12.0f, 13.0f};
     CHECK(prints_histogram(a, 3,
@@ -105,6 +118,7 @@ int main(void) {
     check_one_value();
     check_bin_lower_edge_inclusive();
     check_clamps_to_end_bins();
+    check_clamps_non_finite_and_huge();
     check_skips_empty_bins();
     check_ignores_values_past_n();
 
