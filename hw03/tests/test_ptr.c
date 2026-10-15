@@ -15,7 +15,7 @@ static int fails;
     }                                                                  \
 } while (0)
 
-/* swap_float tests */
+/* ============================ swap_float tests ============================ */
 static void check_swap_float(void) {
     float a = 3.3f, b = 9.2f;
     swap_float(&a, &b);
@@ -31,7 +31,7 @@ static void check_swap_float_twice_restores(void) {
     CHECK(b == 0.0f);
 }
 
-/* minmax tests */
+/* ============================== minmax tests ============================== */
 static void check_minmax_several(void) {
     float a[] = {4.0f, -2.5f, 7.0f, 1.0f};
     float min = 0.0f, max = 0.0f;
@@ -87,7 +87,7 @@ static void check_minmax_null(void) {
     CHECK(min == 111.0f);
 }
 
-/* find_above tests */
+/* ============================ find_above tests ============================ */
 static void check_find_above_two_matches(void) {
     float a[] = {1.0f, 6.0f, 2.0f, 8.0f};
     CHECK(find_above(a, 4, 5.0f) == &a[1]);
@@ -111,6 +111,11 @@ static void check_find_above_n_zero(void) {
     CHECK(find_above(a, 0, 5.0f) == NULL);
 }
 
+static void check_find_above_n_negative(void) {
+    float a[] = {9.0f};
+    CHECK(find_above(a, -1, 5.0f) == NULL);
+}
+
 static void check_find_above_null(void) {
     CHECK(find_above(NULL, 3, 5.0f) == NULL);
 }
@@ -118,6 +123,50 @@ static void check_find_above_null(void) {
 static void check_find_above_ignores_values_past_n(void) {
     float a[] = {1.0f, 2.0f, 9.0f};
     CHECK(find_above(a, 2, 5.0f) == NULL);
+}
+
+/* ============================= reverse tests ============================== */
+static int equals(const float *a, const float *b, int n) {
+    for (int i = 0; i < n; i++) {
+        if (a[i] != b[i]) return 0;
+    }
+    return 1;
+}
+
+static void check_reverse_even(void) {
+    float a[] = {1.0f, 2.0f, 3.0f, 4.0f};
+    float want[] = {4.0f, 3.0f, 2.0f, 1.0f};
+    reverse(a, 4);
+    CHECK(equals(a, want, 4));
+}
+
+static void check_reverse_odd(void) {
+    float a[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
+    float want[] = {5.0f, 4.0f, 3.0f, 2.0f, 1.0f};
+    reverse(a, 5);
+    CHECK(equals(a, want, 5));
+}
+
+static void check_reverse_too_short(void) {
+    float a[] = {7.0f, 8.0f};
+    reverse(a, 1);
+    CHECK(a[0] == 7.0f && a[1] == 8.0f);
+
+    reverse(a, 0);
+    CHECK(a[0] == 7.0f && a[1] == 8.0f);
+}
+
+static void check_reverse_null(void) {
+    reverse(NULL, 4);
+    /* if we make it here, reverse returned without dereferencing NULL */
+    CHECK(1);
+}
+
+static void check_reverse_ignores_values_past_n(void) {
+    float a[] = {1.0f, 2.0f, 3.0f, 99.0f};
+    float want[] = {3.0f, 2.0f, 1.0f, 99.0f};
+    reverse(a, 3);
+    CHECK(equals(a, want, 4));
 }
 
 static void print_summary(void) {
@@ -144,8 +193,15 @@ int main(void) {
     check_find_above_none();
     check_find_above_equal_to_threshold();
     check_find_above_n_zero();
+    check_find_above_n_negative();
     check_find_above_null();
     check_find_above_ignores_values_past_n();
+    // reverse
+    check_reverse_even();
+    check_reverse_odd();
+    check_reverse_too_short();
+    check_reverse_null();
+    check_reverse_ignores_values_past_n();
 
     print_summary();
 

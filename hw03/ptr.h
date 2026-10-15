@@ -7,8 +7,6 @@
 #ifndef PTR_H
 #define PTR_H
 
-// void reverse(float *a, int n);
-
 /**
  * Given the addresses of two floats, exchanges the values stored there. After
  * the call, *a holds the old *b and *b holds the old *a. Nothing is returned.
@@ -33,5 +31,13 @@ int minmax(const float *a, int n, float *min, float *max);
  * elements.
  */
 const float *find_above(const float *a, int n, float threshold);
+
+/**
+ * Given an array a and the number n of valid values in it, reverses a[0..n-1]
+ * in place, so a[0] and a[n-1] trade places, then a[1] and a[n-2], and so on.
+ * Values past a[n-1] are untouched. Returns nothing. Does nothing if a is NULL
+ * or n < 2. Assumes a holds at least n elements.
+ */
+void reverse(float *a, int n);
 
 #endif

@@ -7,7 +7,7 @@
 
 /**
  * Returns a pointer to the first value greater than threshold. Returns NULL if
- * a is NULL or if there is no value greater than threshold found.
+ * a is NULL, n is 0 or less, or if no value greater than threshold was found.
  *
  * @param *a The array to search (read only).
  * @param n  The number of values in the array to consider.
@@ -15,7 +15,7 @@
  * @return A pointer to the first floating point value greater than threshold.
  */
 const float *find_above(const float *a, int n, float th) {
-    if (a == NULL) return NULL;
+    if (a == NULL || n < 1) return NULL;
 
     for (const float *p = a; p < a + n; p++) {
         if (*p > th) return p;
@@ -49,15 +49,19 @@ int minmax(const float *a, int n, float *min, float *max) {
     return 0;
 }
 
-// /**
-//  * Reverses a[0..n-1] in place. It does nothing if a is NULL or n < 2.
-//  *
-//  * @param *a
-//  * @param n
-//  */
-// void reverse(float *a, int n) {
-//     // TODO: implement
-// }
+/**
+ * Reverses a[0..n-1] in place. It does nothing if a is NULL or n < 2.
+ *
+ * @param *a The array to reverse; modified in place.
+ * @param n  The number of values in a to reverse.
+ */
+void reverse(float *a, int n) {
+    if (a == NULL || n < 2) return;
+
+    for (float *lo = a, *hi = a + n - 1; lo < hi; lo++, hi--) {
+        swap_float(lo, hi);
+    }
+}
 
 /**
  * Swaps *a and *b.
