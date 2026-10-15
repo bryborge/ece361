@@ -1,6 +1,8 @@
 /*
  * A pointer library.
  */
+#include <stddef.h>
+
 #include "ptr.h"
 
 // /**
@@ -16,19 +18,30 @@
 //     // TODO: implement
 // }
 
-// /**
-//  * Stores the smallest and largest of a[0..n-1] in *min and *max and returns 0;
-//  * If n < 1 or any pointer is NULL, it changes nothing and returns -1.
-//  *
-//  * @param *a
-//  * @param n
-//  * @param *min
-//  * @param *max
-//  * @return An integer value signifying success or failure of the operation.
-//  */
-// int minmax(const float *a, int n, float *min, float *max) {
-//     // TODO: implement
-// }
+/**
+ * Stores the smallest and largest of a[0..n-1] in *min and *max and returns 0;
+ * If n < 1 or any pointer is NULL, it changes nothing and returns -1.
+ *
+ * @param *a   The array to scan (read only).
+ * @param n    The number of values in the array to consider.
+ * @param *min Where to store the smallest value of a[0..n-1].
+ * @param *max Where to store the largest value of a[0..n-1].
+ * @return 0 on success, or -1 if n < 1 or any pointer is NULL.
+ */
+int minmax(const float *a, int n, float *min, float *max) {
+    if (a == NULL || min == NULL || max == NULL || n < 1) return -1;
+
+    float lo = *a, hi = *a;
+    for (const float *p = a + 1; p < a + n; p++) {
+        if (*p < lo) lo = *p;
+        if (*p > hi) hi = *p;
+    }
+
+    *min = lo;
+    *max = hi;
+
+    return 0;
+}
 
 // /**
 //  * Reverses a[0..n-1] in place. It does nothing if a is NULL or n < 2.
@@ -43,8 +56,8 @@
 /**
  * Swaps *a and *b.
  *
- * @param *a
- * @param *b
+ * @param *a The first float; receives the old value of *b.
+ * @param *b The second float; receives the old value of *a.
  */
 void swap_float(float *a, float *b) {
     float x = *a;
