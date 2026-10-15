@@ -1,5 +1,6 @@
 CC = gcc
 CFLAGS = -std=c11 -Wall -Wextra -g -fsanitize=address,undefined -Iiom361_r4 -MMD -MP
+LDLIBS = -lm
 
 SRCS = main.c sensor.c fsm.c store.c aux.c report.c iom361_r4/iom361_r4.c
 OBJS = $(SRCS:%.c=build/%.o)
@@ -7,7 +8,7 @@ OBJS = $(SRCS:%.c=build/%.o)
 all build: build/garage
 
 build/garage: $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
 build/%.o: %.c
 	@mkdir -p $(@D)
