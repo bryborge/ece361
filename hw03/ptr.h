@@ -7,12 +7,11 @@
 #ifndef PTR_H
 #define PTR_H
 
-// const float *find_above(const float *a, int n, float threshold);
 // void reverse(float *a, int n);
 
 /**
- * Given the addresses of two floats, exchanges the values stored there: after
- * the call, *a holds the old *b and *b holds the old *a. Returns nothing.
+ * Given the addresses of two floats, exchanges the values stored there. After
+ * the call, *a holds the old *b and *b holds the old *a. Nothing is returned.
  * Assumes a and b are both non-NULL and point to valid floats.
  */
 void swap_float(float *a, float *b);
@@ -25,5 +24,14 @@ void swap_float(float *a, float *b);
  * at least n elements.
  */
 int minmax(const float *a, int n, float *min, float *max);
+
+/**
+ * Given an array a, the number n of valid values in it, and a threshold,
+ * returns a pointer to the first value in a[0..n-1] strictly greater than
+ * threshold, or NULL if there is none (including when n < 1) or a is NULL.
+ * The pointer points into a, so it is const like a. Assumes a holds at least n
+ * elements.
+ */
+const float *find_above(const float *a, int n, float threshold);
 
 #endif

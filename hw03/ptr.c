@@ -5,18 +5,24 @@
 
 #include "ptr.h"
 
-// /**
-//  * Returns a pointer to the first value greater than threshold, or NULL if there
-//  * is none.
-//  *
-//  * @param  *a The pointer to return.
-//  * @param  n
-//  * @param  th The threshold.
-//  * @return A pointer to the first floating point value greater than threshold.
-//  */
-// const float *find_above(const float *a, int n, float th) {
-//     // TODO: implement
-// }
+/**
+ * Returns a pointer to the first value greater than threshold. Returns NULL if
+ * a is NULL or if there is no value greater than threshold found.
+ *
+ * @param *a The array to search (read only).
+ * @param n  The number of values in the array to consider.
+ * @param th The threshold; a value equal to it does not count.
+ * @return A pointer to the first floating point value greater than threshold.
+ */
+const float *find_above(const float *a, int n, float th) {
+    if (a == NULL) return NULL;
+
+    for (const float *p = a; p < a + n; p++) {
+        if (*p > th) return p;
+    }
+
+    return NULL;
+}
 
 /**
  * Stores the smallest and largest of a[0..n-1] in *min and *max and returns 0;
