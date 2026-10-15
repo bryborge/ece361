@@ -1,5 +1,8 @@
 /*
- * A pointer library.
+ * ptr.c:
+ *
+ * Implementation of the pointer library declared in ptr.h. Arrays are walked
+ * with pointers (p++, p < a + n, *p).
  */
 #include <stddef.h>
 
