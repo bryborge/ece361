@@ -129,3 +129,14 @@ int tally_count(const tally_t *t, const char *name) {
 
     return entry_matches(t, pos, name) ? t->e[pos].count : 0;
 }
+
+/**
+ * Reports how many different names t holds.
+ *
+ * @param t The tally to look at (read only).
+ * @return The number of entries in use, from 0 to TALLY_NAMES; 0 if t is
+ *         NULL.
+ */
+int tally_size(const tally_t *t) {
+    return t == NULL ? 0 : t->n;
+}

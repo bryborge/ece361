@@ -71,6 +71,20 @@ static void check_create_after_destroy(void) {
     destroy_all(t);
 }
 
+static void check_reused_tally_is_empty(void) {
+    tally_t *t = tally_create();
+
+    tally_add(t, "OPEN");
+    tally_destroy(t);
+    tally_t *again = tally_create();
+
+    CHECK(again == t);  /* the first free slot, so the same one */
+    CHECK(tally_size(again) == 0);
+    CHECK(tally_count(again, "OPEN") == 0);
+
+    tally_destroy(again);
+}
+
 static void check_destroy_null(void) {
     tally_t *t[TALLY_MAX];
 
@@ -98,7 +112,9 @@ static void check_add_counts_up(void) {
 static void check_add_empty_name(void) {
     tally_t *t = tally_create();
 
+    tally_add(t, "OPEN");
     CHECK(tally_add(t, "") == -1);
+    CHECK(tally_size(t) == 1);
 
     tally_destroy(t);
 }
@@ -117,6 +133,7 @@ static void check_add_name_length_limit(void) {
     CHECK(tally_add(t, longest) == 2);
     CHECK(tally_add(t, too_long) == -1);
     CHECK(tally_count(t, longest) == 2);  /* not cut down to longest */
+    CHECK(tally_size(t) == 1);
 
     tally_destroy(t);
 }
@@ -126,6 +143,7 @@ static void check_add_null(void) {
 
     CHECK(tally_add(NULL, "OPEN") == -1);
     CHECK(tally_add(t, NULL) == -1);
+    CHECK(tally_size(t) == 0);
 
     tally_destroy(t);
 }
@@ -141,6 +159,7 @@ static void check_add_full_tally(void) {
 
     CHECK(tally_add(t, "NEW") == -1);  /* a new name is refused */
     CHECK(tally_count(t, "NEW") == 0);
+    CHECK(tally_size(t) == TALLY_NAMES);
     CHECK(tally_add(t, "N00") == 2);   /* an existing one still counts */
     CHECK(tally_add(t, "N15") == 2);
 
@@ -205,6 +224,25 @@ static void check_count_two_tallies_independent(void) {
     tally_destroy(b);
 }
 
+/* ============================ tally_size tests ============================ */
+static void check_size_counts_names_not_adds(void) {
+    tally_t *t = tally_create();
+
+    CHECK(tally_size(t) == 0);
+    tally_add(t, "OPEN");
+    CHECK(tally_size(t) == 1);
+    tally_add(t, "OPEN");
+    CHECK(tally_size(t) == 1);  /* same name again: no new entry */
+    tally_add(t, "CLOSE");
+    CHECK(tally_size(t) == 2);
+
+    tally_destroy(t);
+}
+
+static void check_size_null(void) {
+    CHECK(tally_size(NULL) == 0);
+}
+
 static void print_summary(void) {
     printf("\nSummary:\n");
     printf("--------\n");
@@ -218,6 +256,7 @@ int main(void) {
     check_create_max_then_one_more();
     // tally_destroy
     check_create_after_destroy();
+    check_reused_tally_is_empty();
     check_destroy_null();
     // tally_add
     check_add_counts_up();
@@ -230,6 +269,9 @@ int main(void) {
     check_count_never_added();
     check_count_null();
     check_count_two_tallies_independent();
+    // tally_size
+    check_size_counts_names_not_adds();
+    check_size_null();
 
     print_summary();
 
