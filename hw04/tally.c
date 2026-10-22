@@ -38,3 +38,13 @@ tally_t *tally_create(void) {
 
     return NULL;
 }
+
+/**
+ * Marks t free so that tally_create can hand it out again. Its entries are
+ * left as they are; tally_create empties the tally when it hands it out.
+ *
+ * @param t The tally to give back; NULL does nothing.
+ */
+void tally_destroy(tally_t *t) {
+    if (t != NULL) t->in_use = 0;
+}
