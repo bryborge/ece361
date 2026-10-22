@@ -16,6 +16,7 @@ build/%.o: %.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+build/events.o: events.c tally.h
 build/tally.o: tally.c tally.h
 build/tests/test_tally.o: tests/test_tally.c tally.h
 

@@ -1,0 +1,13 @@
+# Garage door events, one per line, in the order the device saw them.
+# Blank lines and lines starting with '#' are ignored.
+OPEN
+CLOSE
+LOCK
+
+# evening
+OPEN
+CLOSE
+ALARM
+OBSTRUCTION_STOP
+OPEN
+CLOSE
