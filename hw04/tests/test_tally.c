@@ -1,6 +1,7 @@
 // Tests for tally.c.
 
 #include <stdio.h>
+#include <string.h>
 
 #include "tally.h"
 
@@ -80,6 +81,70 @@ static void check_destroy_null(void) {
     destroy_all(t);
 }
 
+/* ============================ tally_add tests ============================= */
+static void check_add_counts_up(void) {
+    tally_t *t = tally_create();
+
+    CHECK(tally_add(t, "OPEN") == 1);
+    CHECK(tally_add(t, "OPEN") == 2);
+    CHECK(tally_add(t, "CLOSE") == 1);  /* goes in before OPEN: OPEN moves */
+    CHECK(tally_add(t, "ALARM") == 1);  /* goes in first: CLOSE, OPEN move */
+    CHECK(tally_add(t, "OPEN") == 3);   /* still found, count kept */
+    CHECK(tally_add(t, "CLOSE") == 2);
+
+    tally_destroy(t);
+}
+
+static void check_add_empty_name(void) {
+    tally_t *t = tally_create();
+
+    CHECK(tally_add(t, "") == -1);
+
+    tally_destroy(t);
+}
+
+static void check_add_name_length_limit(void) {
+    tally_t *t = tally_create();
+    char longest[TALLY_LEN + 1];    /* TALLY_LEN letters and the '\0' */
+    char too_long[TALLY_LEN + 2];   /* one letter more */
+
+    memset(longest, 'A', TALLY_LEN);
+    longest[TALLY_LEN] = '\0';
+    memset(too_long, 'B', TALLY_LEN + 1);
+    too_long[TALLY_LEN + 1] = '\0';
+
+    CHECK(tally_add(t, longest) == 1);
+    CHECK(tally_add(t, longest) == 2);
+    CHECK(tally_add(t, too_long) == -1);
+
+    tally_destroy(t);
+}
+
+static void check_add_null(void) {
+    tally_t *t = tally_create();
+
+    CHECK(tally_add(NULL, "OPEN") == -1);
+    CHECK(tally_add(t, NULL) == -1);
+
+    tally_destroy(t);
+}
+
+static void check_add_full_tally(void) {
+    tally_t *t = tally_create();
+    char name[8];
+
+    for (int i = 0; i < TALLY_NAMES; i++) {
+        snprintf(name, sizeof name, "N%02d", i);
+        tally_add(t, name);
+    }
+
+    CHECK(tally_add(t, "NEW") == -1);  /* a new name is refused */
+    CHECK(tally_add(t, "N00") == 2);   /* an existing one still counts */
+    CHECK(tally_add(t, "N15") == 2);
+
+    tally_destroy(t);
+}
+
 static void print_summary(void) {
     printf("\nSummary:\n");
     printf("--------\n");
@@ -94,6 +159,12 @@ int main(void) {
     // tally_destroy
     check_create_after_destroy();
     check_destroy_null();
+    // tally_add
+    check_add_counts_up();
+    check_add_empty_name();
+    check_add_name_length_limit();
+    check_add_null();
+    check_add_full_tally();
 
     print_summary();
 

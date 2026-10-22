@@ -4,6 +4,8 @@
  * Implementation of the tally. Tallies come from a static pool of TALLY_MAX,
  * each marked in use or free.
  */
+#include <string.h>
+
 #include "tally.h"
 
 /* entry with name and count. */
@@ -21,6 +23,22 @@ struct tally {
 
 /* The pool of tallies. Starts all zero (free). */
 static struct tally pool[TALLY_MAX];
+
+/**
+ * Finds where name is, or where it belongs, in t's sorted entries.
+ *
+ * @param t    The tally to search (read only).
+ * @param name The name to look for.
+ * @return The index of the tally name's entry if it exists, otherwise the index
+ *         of where the name would go to keep the entries sorted.
+ */
+static int find_pos(const struct tally *t, const char *name) {
+    int pos = 0;
+
+    while (pos < t->n && strcmp(t->e[pos].name, name) < 0) pos++;
+
+    return pos;
+}
 
 /**
  * Hands out the first free tally in the pool, marked in use and emptied.
@@ -47,4 +65,41 @@ tally_t *tally_create(void) {
  */
 void tally_destroy(tally_t *t) {
     if (t != NULL) t->in_use = 0;
+}
+
+/**
+ * Counts one more occurrence of name. A name t already holds just has its
+ * count raised. A new name goes in at the index where it belongs, after the
+ * entries from there to the end each move up by one.
+ *
+ * @param t    The tally to add to.
+ * @param name The name to count; t copies it, so the caller keeps its buffer.
+ * @return The new count of name, or -1, changing nothing, if t or name is
+ *         NULL, name is empty or longer than TALLY_LEN, or name is new and t
+ *         is full.
+ */
+int tally_add(tally_t *t, const char *name) {
+    if (t == NULL || name == NULL) return -1;
+
+    size_t len = strlen(name);
+    if (len == 0 || len > TALLY_LEN) return -1;  /* refuse it, do not cut it */
+
+    int pos = find_pos(t, name);
+    if (pos < t->n && strcmp(t->e[pos].name, name) == 0) {
+        return ++t->e[pos].count;
+    }
+
+    if (t->n == TALLY_NAMES) return -1;
+
+    /* Move e[pos..n-1] up by one, starting from the end, so that each entry
+     * is copied before the one below it lands on top of it. */
+    for (int k = t->n; k > pos; k--) {
+        t->e[k] = t->e[k - 1];
+    }
+
+    memcpy(t->e[pos].name, name, len + 1);  /* the letters and the '\0' */
+    t->e[pos].count = 1;
+    t->n++;
+
+    return 1;
 }
