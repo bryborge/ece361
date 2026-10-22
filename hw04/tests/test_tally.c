@@ -110,12 +110,13 @@ static void check_add_name_length_limit(void) {
 
     memset(longest, 'A', TALLY_LEN);
     longest[TALLY_LEN] = '\0';
-    memset(too_long, 'B', TALLY_LEN + 1);
+    memset(too_long, 'A', TALLY_LEN + 1);  /* longest plus one more 'A' */
     too_long[TALLY_LEN + 1] = '\0';
 
     CHECK(tally_add(t, longest) == 1);
     CHECK(tally_add(t, longest) == 2);
     CHECK(tally_add(t, too_long) == -1);
+    CHECK(tally_count(t, longest) == 2);  /* not cut down to longest */
 
     tally_destroy(t);
 }
@@ -139,10 +140,69 @@ static void check_add_full_tally(void) {
     }
 
     CHECK(tally_add(t, "NEW") == -1);  /* a new name is refused */
+    CHECK(tally_count(t, "NEW") == 0);
     CHECK(tally_add(t, "N00") == 2);   /* an existing one still counts */
     CHECK(tally_add(t, "N15") == 2);
 
     tally_destroy(t);
+}
+
+/* =========================== tally_count tests ============================ */
+static void check_count_after_adds(void) {
+    tally_t *t = tally_create();
+
+    tally_add(t, "OPEN");
+    tally_add(t, "CLOSE");
+    tally_add(t, "OPEN");
+    tally_add(t, "ALARM");
+    tally_add(t, "OPEN");
+
+    CHECK(tally_count(t, "ALARM") == 1);
+    CHECK(tally_count(t, "CLOSE") == 1);
+    CHECK(tally_count(t, "OPEN") == 3);
+
+    tally_destroy(t);
+}
+
+static void check_count_never_added(void) {
+    tally_t *t = tally_create();
+
+    CHECK(tally_count(t, "OPEN") == 0);   /* empty tally */
+    tally_add(t, "OPEN");
+    CHECK(tally_count(t, "LOCK") == 0);   /* would go before OPEN */
+    CHECK(tally_count(t, "ZONE") == 0);   /* would go after OPEN */
+    CHECK(tally_count(t, "OPE") == 0);    /* a prefix is not the name */
+    CHECK(tally_count(t, "") == 0);
+
+    tally_destroy(t);
+}
+
+static void check_count_null(void) {
+    tally_t *t = tally_create();
+
+    tally_add(t, "OPEN");
+    CHECK(tally_count(NULL, "OPEN") == 0);
+    CHECK(tally_count(t, NULL) == 0);
+
+    tally_destroy(t);
+}
+
+static void check_count_two_tallies_independent(void) {
+    tally_t *a = tally_create();
+    tally_t *b = tally_create();
+
+    tally_add(a, "OPEN");
+    tally_add(a, "OPEN");
+    tally_add(b, "OPEN");
+    tally_add(b, "CLOSE");
+
+    CHECK(tally_count(a, "OPEN") == 2);
+    CHECK(tally_count(b, "OPEN") == 1);
+    CHECK(tally_count(a, "CLOSE") == 0);
+    CHECK(tally_count(b, "CLOSE") == 1);
+
+    tally_destroy(a);
+    tally_destroy(b);
 }
 
 static void print_summary(void) {
@@ -165,6 +225,11 @@ int main(void) {
     check_add_name_length_limit();
     check_add_null();
     check_add_full_tally();
+    // tally_count
+    check_count_after_adds();
+    check_count_never_added();
+    check_count_null();
+    check_count_two_tallies_independent();
 
     print_summary();
 

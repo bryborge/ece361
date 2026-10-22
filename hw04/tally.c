@@ -41,6 +41,18 @@ static int find_pos(const struct tally *t, const char *name) {
 }
 
 /**
+ * Tells whether the entry at the given position holds name.
+ *
+ * @param t    The tally to look in (read only).
+ * @param pos  The index find_pos returned for name.
+ * @param name The name to compare.
+ * @return 1 if e[pos] is in use and holds name, otherwise 0.
+ */
+static int entry_matches(const struct tally *t, int pos, const char *name) {
+    return pos < t->n && strcmp(t->e[pos].name, name) == 0;
+}
+
+/**
  * Hands out the first free tally in the pool, marked in use and emptied.
  *
  * @return A new, empty tally, or NULL if every tally in the pool is in use.
@@ -85,9 +97,7 @@ int tally_add(tally_t *t, const char *name) {
     if (len == 0 || len > TALLY_LEN) return -1;  /* refuse it, do not cut it */
 
     int pos = find_pos(t, name);
-    if (pos < t->n && strcmp(t->e[pos].name, name) == 0) {
-        return ++t->e[pos].count;
-    }
+    if (entry_matches(t, pos, name)) return ++t->e[pos].count;
 
     if (t->n == TALLY_NAMES) return -1;
 
@@ -102,4 +112,20 @@ int tally_add(tally_t *t, const char *name) {
     t->n++;
 
     return 1;
+}
+
+/**
+ * Looks name up in t without changing anything.
+ *
+ * @param t    The tally to look in (read only).
+ * @param name The name to look up.
+ * @return How often name was added to t: 0 if it never was, or if t or name
+ *         is NULL.
+ */
+int tally_count(const tally_t *t, const char *name) {
+    if (t == NULL || name == NULL) return 0;
+
+    int pos = find_pos(t, name);
+
+    return entry_matches(t, pos, name) ? t->e[pos].count : 0;
 }
