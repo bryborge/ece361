@@ -140,3 +140,18 @@ int tally_count(const tally_t *t, const char *name) {
 int tally_size(const tally_t *t) {
     return t == NULL ? 0 : t->n;
 }
+
+/**
+ * Writes each entry as "name count" on its own line. The entries are kept
+ * sorted, so walking them from e[0] gives strcmp order.
+ *
+ * @param t   The tally to print (read only); NULL prints nothing.
+ * @param out Where to write; NULL prints nothing.
+ */
+void tally_print(const tally_t *t, FILE *out) {
+    if (t == NULL || out == NULL) return;
+
+    for (int i = 0; i < t->n; i++) {
+        fprintf(out, "%s %d\n", t->e[i].name, t->e[i].count);
+    }
+}

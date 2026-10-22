@@ -1,5 +1,9 @@
 // Tests for tally.c.
 
+// fmemopen is POSIX, hidden by -std=c11 without this.
+#define _POSIX_C_SOURCE 200809L
+
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -43,6 +47,29 @@ static void destroy_all(tally_t *t[TALLY_MAX]) {
     for (int i = 0; i < TALLY_MAX; i++) {
         tally_destroy(t[i]);
     }
+}
+
+/**
+ * Captures what tally_print(t, out) writes and checks it matches expected
+ * exactly.
+ *
+ * @param t        The tally to print.
+ * @param expected Exact expected output, including each line's newline.
+ * @return true if the captured output matches expected.
+ */
+static bool prints(const tally_t *t, const char *expected) {
+    // glibc's fmemopen only NUL-terminates after a write, so an empty output
+    // would otherwise leave buf as garbage.
+    char buf[512] = {0};
+    FILE *mem = fmemopen(buf, sizeof buf, "w");
+    if (mem == NULL) return false;
+
+    tally_print(t, mem);
+    fflush(mem);
+
+    bool matches = strcmp(buf, expected) == 0;
+    fclose(mem);
+    return matches;
 }
 
 /* =========================== tally_create tests =========================== */
@@ -243,6 +270,61 @@ static void check_size_null(void) {
     CHECK(tally_size(NULL) == 0);
 }
 
+/* =========================== tally_print tests ============================ */
+static void check_print_order(void) {
+    tally_t *t = tally_create();
+
+    tally_add(t, "OPEN");
+    tally_add(t, "CLOSE");
+    tally_add(t, "OPEN");
+    tally_add(t, "LOCK");
+    tally_add(t, "ALARM");
+    tally_add(t, "CLOSE");
+    tally_add(t, "OPEN");
+    tally_add(t, "CLOSE");
+
+    CHECK(prints(t, "ALARM 1\n"
+                    "CLOSE 3\n"
+                    "LOCK 1\n"
+                    "OPEN 3\n"));
+
+    tally_destroy(t);
+}
+
+static void check_print_strcmp_order(void) {
+    tally_t *t = tally_create();
+
+    tally_add(t, "open");
+    tally_add(t, "OPENED");
+    tally_add(t, "OPEN");
+
+    /* a prefix comes first, and every uppercase letter before lowercase */
+    CHECK(prints(t, "OPEN 1\n"
+                    "OPENED 1\n"
+                    "open 1\n"));
+
+    tally_destroy(t);
+}
+
+static void check_print_empty(void) {
+    tally_t *t = tally_create();
+
+    CHECK(prints(t, ""));
+
+    tally_destroy(t);
+}
+
+static void check_print_null(void) {
+    tally_t *t = tally_create();
+
+    tally_add(t, "OPEN");
+    CHECK(prints(NULL, ""));
+    tally_print(t, NULL);  /* must return without writing anywhere */
+    CHECK(prints(t, "OPEN 1\n"));
+
+    tally_destroy(t);
+}
+
 static void print_summary(void) {
     printf("\nSummary:\n");
     printf("--------\n");
@@ -272,6 +354,11 @@ int main(void) {
     // tally_size
     check_size_counts_names_not_adds();
     check_size_null();
+    // tally_print
+    check_print_order();
+    check_print_strcmp_order();
+    check_print_empty();
+    check_print_null();
 
     print_summary();
 
