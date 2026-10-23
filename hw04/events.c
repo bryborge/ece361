@@ -5,6 +5,9 @@
  * line to one tally, then prints the tally and one last line,
  * "names: N, lines skipped: S", where S counts the lines tally_add refused.
  *
+ * A '\r' at the end of a line is removed, so a file with Windows (CRLF) line
+ * endings counts the same names as one without.
+ *
  * Blank lines and lines that start with '#' are ignored and not counted. A
  * line too long for the buffer is read to its end and counts as one line,
  * which tally_add refuses.
@@ -46,6 +49,10 @@ int main(void) {
             while ((c = getchar()) != '\n' && c != EOF) {}
         }
 
+        if (len > 0 && line[len - 1] == '\r') {
+            line[--len] = '\0';  /* a CRLF file: "OPEN\r" becomes "OPEN" */
+        }
+
         if (len == 0 || line[0] == '#') continue;
         if (tally_add(t, line) == -1) skipped++;
     }
@@ -53,6 +60,8 @@ int main(void) {
     tally_print(t, stdout);
     printf("names: %d, lines skipped: %d\n", tally_size(t), skipped);
 
+    /* Not needed before exit, since the pool is static. Kept so that every
+     * tally_create has its tally_destroy, as a caller of the tally should. */
     tally_destroy(t);
 
     return 0;

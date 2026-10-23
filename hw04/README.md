@@ -9,14 +9,18 @@
 ### What is this?
 
 A tally holds up to `TALLY_NAMES` (16) different names, each up to
-`TALLY_LEN` (15) characters, with a count for each. `tally_t` is opaque:
-`tally.h` declares it without a body, and only `tally.c` completes
-`struct tally`.
+`TALLY_LEN` (15) characters, with a count for each, and up to `TALLY_MAX`
+(4) tallies can exist at once. Callers use it only through `tally.h`; see
+[What the opaque type prevents](#what-the-opaque-type-prevents).
 
-Inside, a tally is an array of entries (a name and a count) kept in
-alphabetical order by name. To add a new name, the tally finds the first entry
-whose name comes after it, slides all entries after it down one slot to open a
-gap, and puts the new name in the gap.
+Inside, `tally.c` keeps a static pool of `TALLY_MAX` tallies, each marked
+in use or free: `tally_destroy` only marks a tally free, and
+`tally_create` empties it when it hands it out again. A tally is an array
+of entries (a name and a count) kept in `strcmp` order. To add a new name,
+`tally_add` finds the first entry whose name comes after it, moves that
+entry and every later one up by one, starting from the last so that no
+entry is overwritten before it has moved, and puts the new name in the
+gap.
 
 | File | Responsibility |
 |------|----------------|
@@ -24,36 +28,9 @@ gap, and puts the new name in the gap.
 | `events.c`           | Counts the event names in a log read from stdin. |
 | `data/door.txt`      | A sample garage door log for `events`. |
 | `tests/test_tally.c` | Unit tests for every function in `tally`. |
-
-| Function | What it does |
-|----------|--------------|
-| `tally_t *tally_create(void)` | Returns a new, empty tally, or `NULL` if `TALLY_MAX` tallies are already in use. |
-| `void tally_destroy(tally_t *t)` | Gives the tally back so `tally_create` can hand it out again. |
-| `int tally_add(tally_t *t, const char *name)` | Counts one more occurrence of `name` and returns its new count, or `-1`. |
-| `int tally_count(const tally_t *t, const char *name)` | Returns how often `name` was added. |
-| `int tally_size(const tally_t *t)` | Returns how many different names the tally holds. |
-| `void tally_print(const tally_t *t, FILE *out)` | Writes one `name count` line per name, in `strcmp` order. |
-
-### Usage
-
-```sh
-build/events < data/door.txt
-```
-
-`events` adds each line of its input to one tally, then prints the tally and a
-last line with the number of names and the number of lines `tally_add`
-refused. Blank lines and lines that start with `#` are ignored and not
-counted. A line too long for the 64-byte input buffer is read to its end and
-counts as one refused line. For `data/door.txt`, where `OBSTRUCTION_STOP` is
-16 characters and so too long:
-
-```
-ALARM 1
-CLOSE 3
-LOCK 1
-OPEN 3
-names: 4, lines skipped: 1
-```
+| `Makefile`           | Builds `events` and the tests into `build/`. |
+| `docs/PRD.md`        | The assignment's requirements, the lecture's recommendations, and the decisions made beyond them. |
+| `AI_USAGE.md`        | Which AI tools were used, for what, and what they got wrong. |
 
 ### Build and test
 
@@ -63,22 +40,58 @@ make test   # builds (if needed) and runs build/tests/test_tally
 make clean  # removes build/
 ```
 
+Everything is built with `gcc -std=c11 -Wall -Wextra` and compiles with no
+warnings. `build/tests/test_tally` prints one line per check (`PASS` or
+`FAIL`) followed by a summary, and exits nonzero if any check failed.
+
+Everything is also built with `-fsanitize=address,undefined`, so an
+out-of-bounds access or a `NULL` dereference aborts with a report, and
+undefined behavior such as signed overflow prints a report, instead of either
+passing silently.
+
+### Usage
+
+```sh
+build/events < data/door.txt
+```
+
+`events` adds each line of its input to one tally, then prints the tally and
+a last line, `names: N, lines skipped: S`.
+
+- Blank lines and lines that start with `#` are ignored: they are neither
+  names nor counted in `S`.
+- `S` counts the lines `tally_add` refused: a line longer than `TALLY_LEN`
+  (15) characters, however long, or a new name once the tally holds
+  `TALLY_NAMES` (16) names.
+- A `\r` at the end of a line is removed, so a file with Windows (CRLF) line
+  endings gives the same result.
+
+For `data/door.txt`, where `OBSTRUCTION_STOP` is 16 characters and so too
+long:
+
+```
+ALARM 1
+CLOSE 3
+LOCK 1
+OPEN 3
+names: 4, lines skipped: 1
+```
+
 ### Input ranges and boundary behavior
 
 Every function that takes a `tally_t` assumes it came from `tally_create` and
 has not been destroyed since. Using a tally after `tally_destroy` is not
 detected.
 
-**`tally_create()`**
-- Hands out the first free tally in the pool, emptied.
+**`tally_t *tally_create(void)`**
+- Returns a new, empty tally, even when it reuses a destroyed one.
 - Returns `NULL` once all `TALLY_MAX` are in use.
 
-**`tally_destroy(t)`**
+**`void tally_destroy(tally_t *t)`**
+- Gives the tally back, so a later `tally_create` can hand it out again.
 - Does nothing if `t` is `NULL`.
-- Only marks the tally free; `tally_create` empties it when it hands it out
-  again.
 
-**`tally_add(t, name)`**
+**`int tally_add(tally_t *t, const char *name)`**
 - Returns `1` the first time `name` is added, then `2`, `3`, and so on.
 - Returns `-1` and changes nothing if `t` or `name` is `NULL`, `name` is empty
   or longer than `TALLY_LEN`, or `name` is new and the tally already holds
@@ -86,13 +99,13 @@ detected.
 - A name longer than `TALLY_LEN` is refused, never cut short.
 - Names are compared exactly: `OPEN`, `open`, and `OPEN ` are three names.
 
-**`tally_count(t, name)`**
+**`int tally_count(const tally_t *t, const char *name)`**
 - Returns `0` if `name` was never added, or if `t` or `name` is `NULL`.
 
-**`tally_size(t)`**
+**`int tally_size(const tally_t *t)`**
 - Returns `0` to `TALLY_NAMES`; `0` if `t` is `NULL`.
 
-**`tally_print(t, out)`**
+**`void tally_print(const tally_t *t, FILE *out)`**
 - Prints nothing for an empty tally, or if `t` or `out` is `NULL`.
 - The order is `strcmp` order, not dictionary order: a prefix comes first
   (`OPEN` before `OPENED`), and every uppercase letter comes before every

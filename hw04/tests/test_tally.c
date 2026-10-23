@@ -1,6 +1,11 @@
-// Tests for tally.c.
+/*
+ * test_tally.c:
+ *
+ * Tests for tally.c. Prints PASS or FAIL for each check, then a summary;
+ * exits nonzero if any check failed.
+ */
 
-// fmemopen is POSIX, hidden by -std=c11 without this.
+/* fmemopen is POSIX, hidden by -std=c11 without this. */
 #define _POSIX_C_SOURCE 200809L
 
 #include <stdbool.h>
@@ -58,8 +63,8 @@ static void destroy_all(tally_t *t[TALLY_MAX]) {
  * @return true if the captured output matches expected.
  */
 static bool prints(const tally_t *t, const char *expected) {
-    // glibc's fmemopen only NUL-terminates after a write, so an empty output
-    // would otherwise leave buf as garbage.
+    /* glibc's fmemopen only NUL-terminates after a write, so an empty
+     * output would otherwise leave buf as garbage. */
     char buf[512] = {0};
     FILE *mem = fmemopen(buf, sizeof buf, "w");
     if (mem == NULL) return false;
@@ -99,17 +104,19 @@ static void check_create_after_destroy(void) {
 }
 
 static void check_reused_tally_is_empty(void) {
-    tally_t *t = tally_create();
+    tally_t *t[TALLY_MAX];
 
-    tally_add(t, "OPEN");
-    tally_destroy(t);
-    tally_t *again = tally_create();
+    create_all(t);
+    tally_add(t[1], "OPEN");
+    tally_destroy(t[1]);
+    t[1] = tally_create();  /* the only free slot */
 
-    CHECK(again == t);  /* the first free slot, so the same one */
-    CHECK(tally_size(again) == 0);
-    CHECK(tally_count(again, "OPEN") == 0);
+    CHECK(t[1] != NULL);
+    CHECK(tally_size(t[1]) == 0);
+    CHECK(tally_count(t[1], "OPEN") == 0);
+    CHECK(prints(t[1], ""));
 
-    tally_destroy(again);
+    destroy_all(t);
 }
 
 static void check_destroy_null(void) {
@@ -334,27 +341,27 @@ static void print_summary(void) {
 }
 
 int main(void) {
-    // tally_create
+    /* tally_create */
     check_create_max_then_one_more();
-    // tally_destroy
+    /* tally_destroy */
     check_create_after_destroy();
     check_reused_tally_is_empty();
     check_destroy_null();
-    // tally_add
+    /* tally_add */
     check_add_counts_up();
     check_add_empty_name();
     check_add_name_length_limit();
     check_add_null();
     check_add_full_tally();
-    // tally_count
+    /* tally_count */
     check_count_after_adds();
     check_count_never_added();
     check_count_null();
     check_count_two_tallies_independent();
-    // tally_size
+    /* tally_size */
     check_size_counts_names_not_adds();
     check_size_null();
-    // tally_print
+    /* tally_print */
     check_print_order();
     check_print_strcmp_order();
     check_print_empty();

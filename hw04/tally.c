@@ -8,17 +8,16 @@
 
 #include "tally.h"
 
-/* entry with name and count. */
+/* One name and how often it was added. */
 struct entry {
-    char name[TALLY_LEN + 1];
-    int count;
+    char name[TALLY_LEN + 1];  /* the letters and the '\0' */
+    int count;                 /* 1 or more */
 };
 
-/* A tally. */
 struct tally {
-    int in_use;
-    int n;
-    struct entry e[TALLY_NAMES];
+    int in_use;                   /* handed out by tally_create? */
+    int n;                        /* entries in use: e[0] to e[n - 1] */
+    struct entry e[TALLY_NAMES];  /* sorted by strcmp, each name once */
 };
 
 /* The pool of tallies. Starts all zero (free). */
@@ -29,8 +28,8 @@ static struct tally pool[TALLY_MAX];
  *
  * @param t    The tally to search (read only).
  * @param name The name to look for.
- * @return The index of the tally name's entry if it exists, otherwise the index
- *         of where the name would go to keep the entries sorted.
+ * @return The index of name's entry if t holds name; otherwise the index
+ *         where name belongs to keep the entries sorted.
  */
 static int find_pos(const struct tally *t, const char *name) {
     int pos = 0;
@@ -94,7 +93,7 @@ int tally_add(tally_t *t, const char *name) {
     if (t == NULL || name == NULL) return -1;
 
     size_t len = strlen(name);
-    if (len == 0 || len > TALLY_LEN) return -1;  /* refuse it, do not cut it */
+    if (len == 0 || len > TALLY_LEN) return -1;
 
     int pos = find_pos(t, name);
     if (entry_matches(t, pos, name)) return ++t->e[pos].count;
