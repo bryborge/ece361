@@ -101,8 +101,8 @@ int tally_add(tally_t *t, const char *name) {
 
     /* Move e[pos..n-1] up by one, starting from the end, so that each entry
      * is copied before the one below it lands on top of it. */
-    for (int k = t->n; k > pos; k--) {
-        t->e[k] = t->e[k - 1];
+    for (int i = t->n; i > pos; i--) {
+        t->e[i] = t->e[i - 1];
     }
 
     memcpy(t->e[pos].name, name, len + 1);  /* the characters + '\0' */
