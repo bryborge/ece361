@@ -5,7 +5,7 @@
  * sees.
  *
  * Every function that takes a tally_t assumes it came from tally_create and
- * has not been given back with tally_destroy since.
+ * has not been passed to tally_destroy since.
  */
 #ifndef TALLY_H
 #define TALLY_H
@@ -16,7 +16,7 @@
 #define TALLY_NAMES 16  /* different names one tally can hold */
 #define TALLY_LEN   15  /* longest name, without the '\0' */
 
-typedef struct tally tally_t;  /* opaque */
+typedef struct tally tally_t;
 
 /**
  * Returns a new, empty tally, or NULL if TALLY_MAX tallies are already in use.
@@ -25,9 +25,9 @@ typedef struct tally tally_t;  /* opaque */
 tally_t *tally_create(void);
 
 /**
- * Given a tally t, gives it back so that tally_create can hand it out again.
- * Returns nothing. Does nothing if t is NULL. Assumes t is not used again
- * afterwards.
+ * Given a tally t, releases it: t no longer counts toward the TALLY_MAX
+ * tallies in use, so tally_create can hand it out again. Does nothing if t
+ * is NULL. Assumes t is not used again afterwards.
  */
 void tally_destroy(tally_t *t);
 
@@ -43,22 +43,22 @@ int tally_add(tally_t *t, const char *name);
 
 /**
  * Given a tally t and a name, returns how often name was added to t: 0 if it
- * never was, or if t or name is NULL. Changes nothing. Assumes name, if not
- * NULL, is a '\0'-terminated string.
+ * never was, or if t or name is NULL. Assumes name, if not NULL, is a
+ * '\0'-terminated string.
  */
 int tally_count(const tally_t *t, const char *name);
 
 /**
  * Given a tally t, returns how many different names it holds, from 0 to
- * TALLY_NAMES: 0 if t is NULL. Changes nothing.
+ * TALLY_NAMES: 0 if t is NULL.
  */
 int tally_size(const tally_t *t);
 
 /**
  * Given a tally t and an output stream out, writes one line per name, the
- * name and its count separated by one space ("OPEN 3"), in alphabetical
- * (strcmp) order. An empty tally writes nothing. Returns nothing. Does
- * nothing if t or out is NULL. Assumes out is open for writing.
+ * name and its count separated by one space (e.g. "OPEN 3"), in alphabetical
+ * (strcmp) order. Writes nothing if t is NULL or empty, or if out is NULL.
+ * Assumes out is open for writing.
  */
 void tally_print(const tally_t *t, FILE *out);
 

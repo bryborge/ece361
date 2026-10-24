@@ -27,7 +27,10 @@
  *         to stderr.
  */
 int main(void) {
-    char line[64];  /* must hold more than TALLY_LEN chars: see below */
+    char line[64];
+    _Static_assert(sizeof line - 1 > TALLY_LEN,
+                   "line must keep more than TALLY_LEN chars, "
+                   "so tally_add refuses an overlong line");
     int skipped = 0;
 
     tally_t *t = tally_create();

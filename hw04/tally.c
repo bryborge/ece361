@@ -2,21 +2,20 @@
  * tally.c:
  *
  * Implementation of the tally. Tallies come from a static pool of TALLY_MAX,
- * each marked in use or free.
+ * each marked "in use" or "free".
  */
 #include <string.h>
 
 #include "tally.h"
 
-/* One name and how often it was added. */
 struct entry {
-    char name[TALLY_LEN + 1];  /* the letters and the '\0' */
+    char name[TALLY_LEN + 1];  /* the characters + '\0' */
     int count;                 /* 1 or more */
 };
 
 struct tally {
-    int in_use;                   /* handed out by tally_create? */
-    int n;                        /* entries in use: e[0] to e[n - 1] */
+    int in_use;                   /* 1 while handed out, 0 when free */
+    int n;                        /* entries held: e[0..n-1] */
     struct entry e[TALLY_NAMES];  /* sorted by strcmp, each name once */
 };
 
@@ -26,7 +25,7 @@ static struct tally pool[TALLY_MAX];
 /**
  * Finds where name is, or where it belongs, in t's sorted entries.
  *
- * @param t    The tally to search (read only).
+ * @param t    The tally to search.
  * @param name The name to look for.
  * @return The index of name's entry if t holds name; otherwise the index
  *         where name belongs to keep the entries sorted.
@@ -42,10 +41,10 @@ static int find_pos(const struct tally *t, const char *name) {
 /**
  * Tells whether the entry at the given position holds name.
  *
- * @param t    The tally to look in (read only).
+ * @param t    The tally to look in.
  * @param pos  The index find_pos returned for name.
  * @param name The name to compare.
- * @return 1 if e[pos] is in use and holds name, otherwise 0.
+ * @return 1 if e[pos] is one of t's entries and holds name, otherwise 0.
  */
 static int entry_matches(const struct tally *t, int pos, const char *name) {
     return pos < t->n && strcmp(t->e[pos].name, name) == 0;
@@ -72,7 +71,7 @@ tally_t *tally_create(void) {
  * Marks t free so that tally_create can hand it out again. Its entries are
  * left as they are; tally_create empties the tally when it hands it out.
  *
- * @param t The tally to give back; NULL does nothing.
+ * @param t The tally to release; NULL does nothing.
  */
 void tally_destroy(tally_t *t) {
     if (t != NULL) t->in_use = 0;
@@ -106,7 +105,7 @@ int tally_add(tally_t *t, const char *name) {
         t->e[k] = t->e[k - 1];
     }
 
-    memcpy(t->e[pos].name, name, len + 1);  /* the letters and the '\0' */
+    memcpy(t->e[pos].name, name, len + 1);  /* the characters + '\0' */
     t->e[pos].count = 1;
     t->n++;
 
@@ -114,9 +113,9 @@ int tally_add(tally_t *t, const char *name) {
 }
 
 /**
- * Looks name up in t without changing anything.
+ * Looks name up in t.
  *
- * @param t    The tally to look in (read only).
+ * @param t    The tally to look in.
  * @param name The name to look up.
  * @return How often name was added to t: 0 if it never was, or if t or name
  *         is NULL.
@@ -132,9 +131,8 @@ int tally_count(const tally_t *t, const char *name) {
 /**
  * Reports how many different names t holds.
  *
- * @param t The tally to look at (read only).
- * @return The number of entries in use, from 0 to TALLY_NAMES; 0 if t is
- *         NULL.
+ * @param t The tally to look at.
+ * @return The number of entries held, from 0 to TALLY_NAMES; 0 if t is NULL.
  */
 int tally_size(const tally_t *t) {
     return t == NULL ? 0 : t->n;
@@ -144,8 +142,8 @@ int tally_size(const tally_t *t) {
  * Writes each entry as "name count" on its own line. The entries are kept
  * sorted, so walking them from e[0] gives strcmp order.
  *
- * @param t   The tally to print (read only); NULL prints nothing.
- * @param out Where to write; NULL prints nothing.
+ * @param t   The tally to print; NULL writes nothing.
+ * @param out Where to write; NULL writes nothing.
  */
 void tally_print(const tally_t *t, FILE *out) {
     if (t == NULL || out == NULL) return;

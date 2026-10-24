@@ -44,7 +44,7 @@ static int create_all(tally_t *t[TALLY_MAX]) {
 }
 
 /**
- * Gives back every tally in t, so the next test starts with an empty pool.
+ * Releases every tally in t, so the next test starts with the whole pool free.
  *
  * @param t The tallies from create_all.
  */
@@ -60,7 +60,8 @@ static void destroy_all(tally_t *t[TALLY_MAX]) {
  *
  * @param t        The tally to print.
  * @param expected Exact expected output, including each line's newline.
- * @return true if the captured output matches expected.
+ * @return true if the captured output matches expected; false if it does not,
+ *         or if fmemopen failed.
  */
 static bool prints(const tally_t *t, const char *expected) {
     /* glibc's fmemopen only NUL-terminates after a write, so an empty
@@ -160,7 +161,7 @@ static void check_add_name_length_limit(void) {
 
     memset(longest, 'A', TALLY_LEN);
     longest[TALLY_LEN] = '\0';
-    memset(too_long, 'A', TALLY_LEN + 1);  /* longest plus one more 'A' */
+    memset(too_long, 'A', TALLY_LEN + 1);
     too_long[TALLY_LEN + 1] = '\0';
 
     CHECK(tally_add(t, longest) == 1);

@@ -88,7 +88,7 @@ detected.
 - Returns `NULL` once all `TALLY_MAX` are in use.
 
 **`void tally_destroy(tally_t *t)`**
-- Gives the tally back, so a later `tally_create` can hand it out again.
+- Releases the tally, so a later `tally_create` can hand it out again.
 - Does nothing if `t` is `NULL`.
 
 **`int tally_add(tally_t *t, const char *name)`**
@@ -126,8 +126,8 @@ int peek(const tally_t *t) {
 and compiled it with `gcc -std=c11 -Wall -Wextra -c` (gcc 14.2):
 
 ```
-peek.c: In function ‘peek’:
-peek.c:4:13: error: invalid use of incomplete typedef ‘tally_t’ {aka ‘const struct tally’}
+peek.c: In function 'peek':
+peek.c:4:13: error: invalid use of incomplete typedef 'tally_t' {aka 'const struct tally'}
     4 |     return t->n;
       |             ^~
 ```
