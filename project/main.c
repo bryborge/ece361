@@ -25,13 +25,13 @@ int main(void) {
 
     _iom361_set_sensor1(15.0f, 60.0f);  /* Garage: 15.0 C, 60 %RH */
 
-    float temp_c, rh_pct;
-    rc = sensor_read(base, &temp_c, &rh_pct);
+    reading_t r;
+    rc = sensor_read(base, 0, &r);      /* no clock until week 6 */
     if (rc != 0) {
         fprintf(stderr, "sensor_read failed: %d\n", rc);
         return 1;
     }
 
-    printf("Garage door opener: %.1f C, %.1f %%RH\n", temp_c, rh_pct);
+    printf("Garage door opener: %.1f C, %.1f %%RH\n", r.temp_c, r.rh_pct);
     return 0;
 }
