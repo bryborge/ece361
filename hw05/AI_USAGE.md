@@ -19,15 +19,12 @@ the description of the lock does not settle, and how the tests check the
 table and the key sequences. I made each call. Claude wrote the decisions up
 in `docs/PRD.md` and the algorithms as pseudocode in `docs/algorithms.md`.
 
-At first I planned to write the code myself from that pseudocode, but I
-changed my mind and had Claude write it, as in the other homeworks, while I
-reviewed. It worked test first, one function at a time: tests that fail,
-then the code that makes them pass, then a cleanup, stopping after each
-function so I could read it. For the tests that guard a specific design
-choice (the order of the checks in `lock_event`, the bounds checks, the
-sequences), it ran them against deliberately broken copies of `lock.c` to
-show that they catch the bug. I managed git, and asked it to make two of the
-commits.
+I had Claude write the implementation, while I reviewed. It worked test first,
+one function at a time: tests that fail, then the code that makes them pass,
+then a cleanup, stopping after each function so I could read it. For the tests
+that guard a specific design choice (the order of the checks in `lock_event`,
+the bounds checks, the sequences), it ran them against deliberately broken
+copies of `lock.c` to show that they catch the bug. I managed git.
 
 Several choices came out of my review. I asked why `event_name` and
 `action_name` existed (the assignment names them only in a comment on
@@ -52,9 +49,3 @@ When I asked about the first, it admitted it had added them out of habit
 without checking they were needed. It removed all three and confirmed the
 build had no warnings, the output was the same, and the compiled code was
 identical.
-
-**A broken `.gitignore`.** While setting up a `compile_flags.txt` so the
-editor could find `lock.h`, it appended a line to a `.gitignore` that had no
-newline at the end, which merged the new line with `build/` and briefly
-stopped `build/` from being ignored. It noticed from `git status` and
-rewrote the file.

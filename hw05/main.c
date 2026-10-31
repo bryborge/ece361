@@ -12,6 +12,7 @@
  *
  * Usage: build/lock < data/codes.txt
  */
+#include <assert.h>
 #include <ctype.h>
 #include <stdio.h>
 
@@ -24,6 +25,13 @@
  * @return 0.
  */
 int main(void) {
+    /* Initialize the table and stops if any entry is undefined. */
+    for (state_t s = 0; s < N_STATES; s++) {
+        for (event_t e = 0; e < N_EVENTS; e++) {
+            assert(lock_table[s][e].action != A_UNDEFINED);
+        }
+    }
+
     state_t s = LOCKED;
     int c;
 

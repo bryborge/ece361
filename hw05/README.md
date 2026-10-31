@@ -5,48 +5,67 @@
 
 ### What is this?
 
-The lock has four states: `LOCKED`, `GOT1` and `GOT2` (one or two digits of
-the code typed), and `OPEN`. It has four events: a right digit, a wrong digit,
-the door closing, and the 5-second timer running out. Everything the lock
-does is in one table, `lock_table`, indexed by state and event, which gives
-the next state and the action (`NONE`, `UNLOCK`, `LOCK` or `BEEP`). So
-`lock_step` is a single table lookup, with no `if` or `switch` on the state.
+A combination lock, built as a state machine. It has four states: `LOCKED`,
+`GOT1` and `GOT2` (you've typed one or two digits of the code so far), and
+`OPEN`. It reacts to four events: a right digit, a wrong digit, the door
+closing, and the 5-second timer running out.
 
-`lock_event` turns a typed character into an event. Which digit is right
-depends on the state, so it reads the next digit of the code from the
-`next_digit` array, indexed by state; `OPEN` has no next digit, so every
-digit is wrong while the door is open.
+The whole behavior of the lock lives in one table, `lock_table`. It's indexed
+by state and event, and it tells you the next state and what to do about it
+(`NONE`, `UNLOCK`, `LOCK` or `BEEP`). This makes it so `lock_step` is just a
+table lookup.
 
-| File | Responsibility |
-|------|----------------|
+That makes it a Mealy machine: the actions happen on the transitions, not in
+the states. Going from `GOT2` to `OPEN` unlocks the door, but sitting in
+`OPEN` doesn't do anything.
+
+`main` also checks the table once at startup: if any entry was left out (its
+action is still `A_UNDEFINED`), an assert stops the program before the lock
+runs at all.
+
+`lock_event` is what turns a keypress into an event. Whether a digit is
+"right" depends on where you are in the code, so it looks up the expected
+digit in `next_digit`, which is indexed by state. `OPEN` doesn't expect any
+digit, so every digit counts as wrong once the door is open.
+
+| File | What it's for |
+|------|---------------|
 | `lock.h`, `lock.c`   | The transition table, `lock_step`, `lock_event`, and the state, event and action names. |
 | `main.c`             | Runs the lock on stdin and prints each step. |
-| `data/codes.txt`     | Sample keypad input for `lock`; see [Usage](#usage). |
-| `tests/test_lock.c`  | Unit tests for every function in `lock.c` and for the key sequences from the assignment. |
-| `Makefile`           | Builds `lock` and the tests into `build/`. |
-| `docs/PRD.md`        | The assignment's requirements and the decisions made beyond them. |
+| `data/codes.txt`     | Sample keypad input; see [Usage](#usage). |
+| `data/codes.expected` | What `lock` should print to stdout for `data/codes.txt`; `make test` checks it. |
+| `data/codes.expected.err` | What `lock` should print to stderr for `data/codes.txt`; `make test` checks it. |
+| `tests/test_lock.c`  | Tests for every function in `lock.c`, plus the key sequences from the assignment. |
+| `check.h`, `check.c` | Bonus: `fsm_check`, which looks for mistakes in a transition table. |
+| `tests/test_check.c` | Tests for `fsm_check`, run on broken copies of `lock_table`. |
+| `BONUS.md`           | What the checker says about three broken tables, and why each one is a real bug. |
+| `Makefile`           | Builds everything into `build/`. |
+| `docs/PRD.md`        | The assignment's requirements, plus the decisions we made where it left things open. |
 | `docs/algorithms.md` | Pseudocode for `lock_event`, `main` and the sequence tests. |
-| `AI_USAGE.md`        | Which AI tools were used, for what, and what they got wrong. |
-| `check.h`, `check.c` | Bonus: `fsm_check`, which finds the mistakes a transition table can hold. |
-| `tests/test_check.c` | Unit tests for `fsm_check`, on broken copies of `lock_table`. |
-| `BONUS.md`           | The checker's output on three broken tables, and why each is a real bug. |
+| `AI_USAGE.md`        | Which AI tools I used, for what, and what they got wrong. |
 
 ### Build and test
 
 ```sh
 make        # builds build/lock
-make test   # builds (if needed) and runs build/tests/test_lock
+make test   # builds (if needed), runs test_lock, and checks the trace
 make bonus  # builds (if needed) and runs build/tests/test_check
 make clean  # removes build/
 ```
 
-Everything is built with `gcc -std=c11 -Wall -Wextra` and compiles with no
-warnings. `build/tests/test_lock` prints one line per check (`PASS` or
-`FAIL`) followed by a summary, and exits nonzero if any check failed.
+It's all compiled with `gcc -std=c11 -Wall -Wextra`, with no warnings. Both
+test programs print a `PASS` or `FAIL` line per check, with a summary, and
+exit nonzero if anything failed.
 
-Everything is also built with `-fsanitize=address,undefined`, so an
-out-of-bounds read of a table aborts with a report instead of passing
-silently.
+`make test` also runs `build/lock < data/codes.txt` and diffs its stdout
+against `data/codes.expected` and its stderr against
+`data/codes.expected.err`, so `main.c` gets tested too, not just `lock.c`.
+That covers the typo report and the whitespace skip, which only show up on
+stderr.
+
+Everything's also built with `-fsanitize=address,undefined`, so if something
+ever reads past the end of a table, the program stops with a report instead
+of quietly carrying on.
 
 ### Usage
 
@@ -54,30 +73,30 @@ silently.
 build/lock < data/codes.txt
 ```
 
-`lock` starts in `LOCKED` and reads its input one character at a time. For
+`lock` starts out `LOCKED` and reads its input one character at a time. For
 each event it prints the state, the character, the event, the next state and
-the action; after the input, it prints the final state.
+the action. When the input runs out, it prints where it ended up.
 
-- `0` to `9` are digits, `c` is the door closing, and `t` is the timer running
-  out. Only lowercase `c` and `t` count.
-- Whitespace (spaces, line endings, a Windows file's `\r`) is skipped.
-- Any other character is skipped with a line on stderr, such as
-  `lock: ignoring 'C'`, so a typo is noticed without changing what goes to
-  stdout. A byte that cannot be printed is shown in hex.
+- `0` to `9` are digits, `c` means the door closed, and `t` means the timer
+  ran out. Only lowercase `c` and `t` count.
+- Whitespace (spaces, line endings, the `\r` in a Windows file) is skipped.
+- Anything else gets skipped too, but with a note on stderr like
+  `lock: ignoring 'C'`, so typos don't slip by unnoticed and stdout stays
+  clean. Bytes that can't be printed show up in hex.
 
-The whole file runs on one lock, so each line starts in the state the line
-before it left. `data/codes.txt` is ordered so that each line starts in
-`LOCKED`:
+One thing to know about `data/codes.txt`: the whole file runs through a single
+lock, so each line picks up wherever the line before it left off. I ordered
+the lines so that each one starts from `LOCKED`:
 
-| Line | Shows |
-|------|-------|
-| `3314` | A wrong digit starts over: the second `3` throws away the first, so `1` and `4` are wrong too. |
-| `31t4` | The timer running out starts over, silently. |
+| Line | What it shows |
+|------|---------------|
+| `3314` | A wrong digit starts you over. The second `3` is wrong in `GOT1`, and it doesn't count as a fresh first digit, so the `1` and `4` after it are wrong too. |
+| `31t4` | The timer running out starts you over, without a beep. |
 | `314c` | The code opens the door, and closing it locks it again. |
 | `314`  | The code opens the door, and it stays open. |
-| `C`    | An uppercase `C` is not an event; it is reported on stderr. |
+| `C`    | Uppercase `C` isn't an event, so it gets reported on stderr. |
 
-The output on stdout:
+Here's what lands on stdout:
 
 ```
 LOCKED 3 RIGHT -> GOT1 NONE
@@ -102,10 +121,10 @@ and on stderr, `lock: ignoring 'C'`.
 
 ### State diagram
 
-Each edge is labeled `EVENT / ACTION`; an edge with no action does `NONE`.
-Only the edges that change the state or cause an action are drawn. Every
-other event leaves the state as it is and does `NONE`; the transition table
-below lists all 16.
+Edges are labeled `EVENT / ACTION`, and an edge with no action does `NONE`.
+I only drew the edges that change the state or actually do something. Every
+other event leaves the lock where it is and does nothing; the table below
+has all 16.
 
 ```
         WRONG / BEEP
@@ -127,7 +146,7 @@ below lists all 16.
 
 ### Transition table
 
-Each cell is the next state and the action.
+Each cell is the next state, then the action.
 
 | State \ Event | `E_RIGHT` | `E_WRONG` | `E_CLOSE` | `E_TIMEOUT` |
 |---------------|-----------|-----------|-----------|-------------|
@@ -136,28 +155,31 @@ Each cell is the next state and the action.
 | `GOT2`   | `OPEN`, `UNLOCK` | `LOCKED`, `BEEP` | `GOT2`, `NONE`   | `LOCKED`, `NONE` |
 | `OPEN`   | `OPEN`, `NONE`   | `OPEN`, `NONE`   | `LOCKED`, `LOCK` | `LOCKED`, `LOCK` |
 
-Two entries are not set by the assignment's description of the lock:
+The assignment's description of the lock doesn't pin down two of these, so I
+had to make a call:
 
-- **`LOCKED` on `E_TIMEOUT`**: no timer runs while the lock is locked, so a
-  real lock never sees this (though typing `t` in `LOCKED` produces it), but
-  every entry must be filled. It stays `LOCKED` and does `NONE`;
-  `A_UNDEFINED` is kept to mean "an entry left out".
-- **`OPEN` on `E_RIGHT`**: `lock_event` never produces it, since every digit
-  is wrong while open, but a caller can pass it to `lock_step` directly. Like
-  any digit while open, it does nothing.
+- **`LOCKED` on `E_TIMEOUT`**: the timer isn't running while the lock is
+  locked, so a real lock would never see this. (You can still type `t` in
+  `LOCKED`, though.) Every entry has to be filled in, so it just stays
+  `LOCKED` and does `NONE`. I didn't use `A_UNDEFINED` here, because that's
+  reserved for "somebody forgot this entry".
+- **`OPEN` on `E_RIGHT`**: `lock_event` never produces this, because every
+  digit is wrong once the door is open. But nothing stops a caller from
+  passing it to `lock_step` directly, so it does what any digit does while
+  the door is open, which is nothing.
 
 ### Input ranges and boundary behavior
 
 **`state_t lock_step(state_t s, event_t e, action_t *action)`**
-- Asserts that `s` and `e` are in range and that `action` is not `NULL`: a
-  bad argument is a bug in the caller, so it stops the program instead of
-  reading outside the table.
+- Asserts that `s` and `e` are in range and that `action` isn't `NULL`. A bad
+  argument means the caller has a bug, so it's better to stop right there
+  than to read something random from outside the table.
 
 **`int lock_event(state_t s, char c)`**
 - Asserts that `s` is in range.
-- Returns `-1` for anything that is not a digit, `c` or `t`, including `C`,
-  `T`, whitespace and bytes above 127.
+- Returns `-1` for anything that isn't a digit, `c` or `t`. That includes `C`,
+  `T`, whitespace, and bytes above 127.
 
 **`state_name`, `event_name`, `action_name`**
 - Return the name without its `E_` or `A_` prefix (`GOT2`, `RIGHT`,
-  `UNLOCK`), or `?` for a value out of range.
+  `UNLOCK`), or `?` if the value is out of range.

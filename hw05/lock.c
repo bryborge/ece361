@@ -40,7 +40,7 @@ static const char next_digit[N_STATES] = {
     [LOCKED] = '3',
     [GOT1]   = '1',
     [GOT2]   = '4',
-    [OPEN]   = '\0',  // not strictly needed; defined for completeness.
+    [OPEN]   = '\0',  /* not strictly needed; defined for completeness */
 };
 
 static const char *const state_names[N_STATES] = {
