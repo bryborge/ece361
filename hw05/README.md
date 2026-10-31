@@ -27,12 +27,16 @@ digit is wrong while the door is open.
 | `docs/PRD.md`        | The assignment's requirements and the decisions made beyond them. |
 | `docs/algorithms.md` | Pseudocode for `lock_event`, `main` and the sequence tests. |
 | `AI_USAGE.md`        | Which AI tools were used, for what, and what they got wrong. |
+| `check.h`, `check.c` | Bonus: `fsm_check`, which finds the mistakes a transition table can hold. |
+| `tests/test_check.c` | Unit tests for `fsm_check`, on broken copies of `lock_table`. |
+| `BONUS.md`           | The checker's output on three broken tables, and why each is a real bug. |
 
 ### Build and test
 
 ```sh
 make        # builds build/lock
 make test   # builds (if needed) and runs build/tests/test_lock
+make bonus  # builds (if needed) and runs build/tests/test_check
 make clean  # removes build/
 ```
 
