@@ -208,9 +208,13 @@ Other notes:
 - **Name arrays.** Write them with designated initializers (`[GOT1] = "GOT1"`)
   so that each name sits next to its enum value. The table is written the same
   way.
-- **Bounds checks on the enums.** gcc makes these enums unsigned, so
-  `s < 0` triggers `-Wtype-limits` under `-Wextra`. A warning would fail
-  "`make` with no warnings". Write `(unsigned)s >= N_STATES` instead.
+- **Bounds checks on the enums.** Write both sides: `s >= 0 && s < N_STATES`.
+  C lets each compiler choose the integer type of an enum. gcc picks
+  `unsigned int` for these enums, so on gcc the `>= 0` half is always true,
+  but a compiler with signed enums needs it to reject a negative value. gcc
+  14.2 does not warn about `s < 0` or `s >= 0` on an enum under `-Wextra`
+  (it does for a plain `unsigned`). The `(unsigned)s < N_STATES` trick works
+  too, but it needs a comment explaining it.
 - **`assert` in `lock_step`.** The asserts check that the caller kept the
   contract; they don't choose what to do based on the state. So they don't
   break the rule "no `if` or `switch` on the state".
