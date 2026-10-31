@@ -8,6 +8,8 @@ Code for this project lives only in `project/`. Sibling folders (`hw01`, `hw02`,
 
 Weekly plan is in ASSIGNMENT.md section 8. Work only at the current week's stage; later modules stay stubs until their week. Week 2: five module stubs, a `Makefile` linking them with iom361, and a first `SPEC.md`.
 
+**Week 5 gate:** the draft transition table in [FSM_TABLE.md](FSM_TABLE.md) is pending the student's review on paper. Do not implement `fsm.h` or `fsm.c` until the student has explicitly confirmed the table, cell by cell, and any changes are recorded there.
+
 ## Ground rules
 
 - This is graded coursework and the final exam asks the student to explain and change any line. Keep code small and plain, and explain non-obvious choices in the reply so the student can defend them.
