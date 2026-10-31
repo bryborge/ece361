@@ -4,7 +4,7 @@
 
 | Tool | Model | Used for |
 |------|-------|----------|
-| Claude Code | Opus 5.5 | Design interview, PRD and pseudocode, implementing `lock.c`, `main.c` and the tests, Makefile, README |
+| Claude Code | Opus 5.5 | Design interview, PRD, implementing `lock.c`, `main.c` and the tests, Makefile, README |
 
 ## Description
 
@@ -17,7 +17,7 @@ what a digit means while the door is open, how bad arguments are handled
 what `main` does with characters that are not events, the two table entries
 the description of the lock does not settle, and how the tests check the
 table and the key sequences. I made each call. Claude wrote the decisions up
-in `docs/PRD.md` and the algorithms as pseudocode in `docs/algorithms.md`.
+in `docs/PRD.md`.
 
 I had Claude write the implementation, while I reviewed. It worked test first,
 one function at a time: tests that fail, then the code that makes them pass,

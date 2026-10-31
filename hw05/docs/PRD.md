@@ -1,8 +1,7 @@
 # HW5 PRD: The combination lock
 
 Source: *Homework 5, ECE 361, Fall 2026, Revision 0* (Oct 27, 2026), cited
-as **[HW]**. Pseudocode for the algorithms is in
-[algorithms.md](algorithms.md), cited as **[ALG]**.
+as **[HW]**.
 
 Requirements (sections 2 to 6) come from the assignment and are graded.
 Section 7 gives implementation recommendations: they are the suggested way to
@@ -161,7 +160,7 @@ The Makefile is written and verified. The binaries are `build/lock` and
 How to build and test, the state diagram (in ASCII or as a photo of your
 drawing) and the transition table (as a Markdown table). [HW]
 
-## 5. Bonus: a table checker (deferred)
+## 5. Bonus: a table checker
 
 Worth one revision token. Write `int fsm_check(const transition_t
 table[N_STATES][N_EVENTS], state_t start, FILE *out)` in `check.c` and
@@ -178,8 +177,8 @@ write `BONUS.md`: the checker's output on three broken copies of your table,
 and why each is a real bug for a lock. A good answer to one extra Shine
 question earns the token. [HW]
 
-**Status:** To be done after the core work in sections 3 and 4. Ask the
-user about it once the core is finished.
+**Status:** Done, after the core work: `check.h`, `check.c`,
+`tests/test_check.c`, the `make bonus` target and `BONUS.md`.
 
 ## 6. Acceptance criteria (Satisfactory)
 
@@ -193,17 +192,6 @@ user about it once the core is finished.
 [HW, Deliverable, Shine, and requirements]
 
 ## 7. Implementation recommendations
-
-The algorithms are written out step by step
-in [ALG]:
-
-- **`lock_event`**: uses a per-state `NEXT_DIGIT` array and rejects
-  non-digits before the lookup.
-- **`main`**: the read loop, the whitespace skip, the report to stderr and the
-  event line.
-- **`run()`**: the helper the tests use to run a key sequence.
-
-Other notes:
 
 - **Name arrays.** Write them with designated initializers (`[GOT1] = "GOT1"`)
   so that each name sits next to its enum value. The table is written the same
@@ -227,8 +215,8 @@ Other notes:
 |----------|----------|-----|
 | `LOCKED` + `E_TIMEOUT` | `{LOCKED, A_NONE}` | No timer runs while locked, but the entry must still be filled in. `A_UNDEFINED` would make the bonus checker report a deliberate entry as left out. |
 | `OPEN` + `E_RIGHT` | `{OPEN, A_NONE}` | `lock_event` never produces it (see the next row), but a caller can pass it to `lock_step` directly. "While open, digits do nothing." |
-| Digit while `OPEN` | Every digit is `E_WRONG`. | There is no next digit. `NEXT_DIGIT[OPEN]` holds a value that no digit can equal. |
-| Where the code lives | `NEXT_DIGIT[N_STATES]`, one designated initializer per state | No branching on the state. Avoids `"314"[s]`, which only works because the enum order happens to match the number of digits typed. |
+| Digit while `OPEN` | Every digit is `E_WRONG`. | There is no next digit. `next_digit[OPEN]` holds a value that no digit can equal. |
+| Where the code lives | `next_digit[N_STATES]`, one designated initializer per state | No branching on the state. Avoids `"314"[s]`, which only works because the enum order happens to match the number of digits typed. |
 | Order of checks in `lock_event` | `c`, then `t`, then reject non-digits, then the lookup | Rejecting non-digits first means only a digit can be `RIGHT` or `WRONG`. |
 | Out-of-range input to `lock_step` | `assert` that `s` and `e` are in range and that `action` is not `NULL` | Fail fast when the contract is broken. Returning a safe default would hide the bug. |
 | Out-of-range state in `lock_event` | `assert` | `-1` keeps a single meaning: "not an event". |
@@ -244,13 +232,12 @@ Other notes:
 | Non-event in a test string | Record a FAIL and stop that sequence. | Letting `lock_step`'s assert fire would abort the program and lose the summary and the nonzero exit status. |
 | Testing the name functions | Check the last valid value, `N_*` and `-1` for each. | This is where an off-by-one in the bounds check would show. |
 | README diagram | ASCII. Draw only the edges that change the state or emit an action, plus the note "all other events: stay, NONE". | Sixteen edges would clutter the diagram. The Markdown table lists every entry. |
+| Checking for `A_UNDEFINED` at run time | Once at startup in `main`: assert that none of the 16 entries is `A_UNDEFINED`. `lock_step` doesn't check. | The lecture's approach (week 5, slide 14). It catches a forgotten entry before the lock runs, including one no input would reach, instead of on every keypress. |
+| Testing `main` | `make test` runs `build/lock < data/codes.txt` and diffs stdout against `data/codes.expected` and stderr against `data/codes.expected.err`. | The lecture's third kind of test, a trace against a known run (slide 23). stderr is included because the typo report and the whitespace skip only show up there. |
 
 ### 8.2 Still open
 
-1. **`A_UNDEFINED` at run time.** Should `lock_step` also assert that the
-   action it looks up is not `A_UNDEFINED`? `fsm_check` would catch a
-   missing entry before the program runs, and an assert would catch one
-   while it runs. This will be settled later, together with the bonus.
+Nothing.
 
 ## 9. Out of scope
 
@@ -282,6 +269,6 @@ Questions the design invites:
 - Why is `lock_step` a single lookup, and why is the `assert` in it not a
   branch on the state?
 - Why is `A_UNDEFINED` 0?
-- Why does `lock_event` reject non-digits before it reads `NEXT_DIGIT`?
+- Why does `lock_event` reject non-digits before it reads `next_digit`?
 - Why do the tests write out the expected table rather than read
   `lock_table`?

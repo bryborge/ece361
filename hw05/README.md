@@ -41,7 +41,6 @@ digit, so every digit counts as wrong once the door is open.
 | `BONUS.md`           | What the checker says about three broken tables, and why each one is a real bug. |
 | `Makefile`           | Builds everything into `build/`. |
 | `docs/PRD.md`        | The assignment's requirements, plus the decisions we made where it left things open. |
-| `docs/algorithms.md` | Pseudocode for `lock_event`, `main` and the sequence tests. |
 | `AI_USAGE.md`        | Which AI tools I used, for what, and what they got wrong. |
 
 ### Build and test
