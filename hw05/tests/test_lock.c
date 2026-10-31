@@ -36,6 +36,33 @@ static bool steps_to(state_t s, event_t e, state_t next, action_t action) {
     return got_next == next && got_action == action;
 }
 
+/**
+ * Types keys into a lock that starts in LOCKED, one character at a time,
+ * through lock_event and lock_step, as main does.
+ *
+ * @param keys   The characters to type; each must be an event.
+ * @param final  The state the lock should end in.
+ * @param action The action the last key should cause.
+ * @return true if the lock ends in final and the last action was action;
+ *         false otherwise, or if a key is not an event (a mistyped test,
+ *         reported on its own line so it is not mistaken for a lock bug).
+ */
+static bool runs_to(const char *keys, state_t final, action_t action) {
+    state_t s = LOCKED;
+    action_t last = A_NONE;
+
+    for (const char *k = keys; *k != '\0'; k++) {
+        int e = lock_event(s, *k);
+        if (e == -1) {
+            printf("       runs_to(\"%s\"): '%c' is not an event\n", keys, *k);
+            return false;
+        }
+        s = lock_step(s, (event_t)e, &last);
+    }
+
+    return s == final && last == action;
+}
+
 /* ============================ lock_step tests ============================= */
 /*
  * One check per table entry, written from the spec (docs/PRD.md section 3.2)
@@ -151,6 +178,14 @@ static void check_action_name_out_of_range(void) {
     CHECK(strcmp(action_name((action_t)-1), "?") == 0);
 }
 
+/* ============================ sequence tests ============================== */
+static void check_sequences(void) {
+    CHECK(runs_to("314",  OPEN,   A_UNLOCK));
+    CHECK(runs_to("3314", LOCKED, A_BEEP));     /* the second 3 starts over */
+    CHECK(runs_to("31t4", LOCKED, A_BEEP));     /* the timeout starts over */
+    CHECK(runs_to("314c", LOCKED, A_LOCK));
+}
+
 static void print_summary(void) {
     printf("\nSummary:\n");
     printf("--------\n");
@@ -180,6 +215,8 @@ int main(void) {
     /* action_name */
     check_action_name();
     check_action_name_out_of_range();
+    /* sequences */
+    check_sequences();
 
     print_summary();
 
