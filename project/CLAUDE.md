@@ -6,7 +6,14 @@ Code for this project lives only in `project/`. Sibling folders (`hw01`, `hw02`,
 
 ## Where we are
 
-Weekly plan is in ASSIGNMENT.md section 8. Work only at the current week's stage; later modules stay stubs until their week. Week 2: five module stubs, a `Makefile` linking them with iom361, and a first `SPEC.md`.
+Weekly plan is in ASSIGNMENT.md section 8. Work only at the current week's stage; later modules stay stubs until their week.
+
+**Week 5:** the transition table is confirmed and recorded in [SPEC.md](SPEC.md) (events, order, position and timer, table, interface). Implementation notes for `fsm.[ch]` that SPEC.md does not record:
+
+- Carry over from HW5: `transition_t`, `A_UNDEFINED` = 0, an `N_*` count at the end of each enum, `fsm_step` as one lookup with asserts on its arguments, `state_name`, `event_name` and `action_name` with two-sided bounds checks, and the startup check in `main` that no entry is `A_UNDEFINED`. Not carried over: `fsm_check`.
+- Tests: every cell, written out from SPEC.md rather than read from the code, plus sequences run through `fsm_tick` in a `runs_to`-style helper, including a reversal mid-travel that checks the length of the return trip, a press on each state's last tick, and a press on the tick the pause ends. Scenario files 1, 3 and 4 this week; their expected traces wait for the replay in week 6.
+- `now - entered_at` gets a comment citing the POSIX assumption.
+- Deferred: the status word, including what the "freeze guard active" bit means, is settled in its own session.
 
 ## Ground rules
 
@@ -26,7 +33,7 @@ Weekly plan is in ASSIGNMENT.md section 8. Work only at the current week's stage
 | Module | Rule |
 |---|---|
 | `sensor.[ch]` | Reads TEMP_REG and HUMID_REG, rounds to 0.1 °C and 0.1 %RH. No `printf`. Returns the reading through a pointer, failure through the return value. |
-| `fsm.[ch]` | State and event enums, transition table (an array indexed by state and event, no `if` chains), one next-state function. |
+| `fsm.[ch]` | State, event, and action enums, transition table (an array indexed by state and event, no `if` chains), one next-state function (`fsm_step`). Also turns a tick's inputs into events (`fsm_tick`) and the state into LEDs (`fsm_leds`). No iom361 calls. |
 | `store.[ch]` | Opaque `store_t`, ordered by temperature quantized to 0.5 °C via a single `record_compare`. Starts as a sorted array (week 4), becomes a BST in week 8 with no change outside `store.c`. |
 | `aux.[ch]` | Opaque stack of events, starts at 8 slots, doubles when full. |
 | `report.[ch]` | Moving average over W readings (W is a parameter). Reads the store through `store.h` only. |

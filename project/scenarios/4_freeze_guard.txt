@@ -1,0 +1,24 @@
+# Scenario 4: rule 3. A cold spell comes while the door is open. Closing is
+# not refused (the guard applies only in CLOSED); once the door is closed,
+# REMOTE is refused, with or without the barrier on. When the garage warms
+# above 1.0 C, REMOTE opens the door again. Comments give the state the
+# door should be in.
+start 1791273600                # 2026-10-06 08:00:00 UTC
+# tick  temp   rh    switches
+0       5.0    70    0x0        # CLOSED
+2       5.0    70    0x1        # REMOTE pressed: OPENING
+3       5.0    70    0x0        # released
+17      5.0    70    0x0        # OPEN (15 ticks after the press)
+20      0.5    70    0x0        # the cold comes; still OPEN
+22      0.5    70    0x1        # REMOTE pressed: CLOSING, not refused
+23      0.5    70    0x0        # released
+37      -3.0   70    0x0        # CLOSED (15 ticks after the press)
+40      -3.0   70    0x1        # REMOTE: refused, CLOSED
+41      -3.0   70    0x0        # released
+43      -3.0   70    0x3        # REMOTE with the barrier on: refused, CLOSED
+44      -3.0   70    0x0        # both released
+50      4.0    70    0x0        # warmer: the guard clears
+52      4.0    70    0x1        # REMOTE pressed: OPENING
+53      4.0    70    0x0        # released
+67      4.0    70    0x0        # OPEN (15 ticks after the press)
+70      4.0    70    0x0        # still OPEN

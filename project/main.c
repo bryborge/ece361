@@ -9,12 +9,22 @@
  * `./garage scenario.txt` prints a trace line per tick;
  * `./garage scenario.txt --report` prints only the moving-average report.
  */
+#include <assert.h>
 #include <stdio.h>
 
+#include "fsm.h"
 #include "iom361_r4.h"
 #include "sensor.h"
 
 int main(void) {
+    /* An entry left out of the table reads as { CLOSED, A_UNDEFINED }. Stop
+     * before the door runs, including on an entry no input would reach. */
+    for (state_t s = 0; s < N_STATES; s++) {
+        for (event_t e = 0; e < N_EVENTS; e++) {
+            assert(fsm_table[s][e].action != A_UNDEFINED);
+        }
+    }
+
     int rc;
     uint32_t *base = iom361_initialize(2, 2, &rc);
 

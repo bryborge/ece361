@@ -1,26 +1,14 @@
 /*
  * test_store.c:
  *
- * Tests for store.c. Prints PASS or FAIL for each check, then one line with
- * the number passed and failed; exits nonzero if any check failed.
+ * Tests for store.c. Prints PASS or FAIL for each check; test_main.c runs
+ * them and prints the summary.
  */
 
 #include <stdbool.h>
-#include <stdio.h>
 
+#include "check.h"
 #include "store.h"
-
-static int total;
-static int fails;
-
-#define CHECK(cond) do {                                               \
-    total++;                                                           \
-    if (cond) printf("(PASS) Test: %s\n", #cond);                      \
-    else {                                                             \
-        printf("(FAIL) Test: %s (line %d)\n", #cond, __LINE__);        \
-        fails++;                                                       \
-    }                                                                  \
-} while (0)
 
 /**
  * Builds a record with the given temperature and timestamp. The other
@@ -263,7 +251,7 @@ static void check_walk_out_too_small(void) {
     store_destroy(s);
 }
 
-int main(void) {
+void run_store_tests(void) {
     /* record_compare */
     check_compare_same_step();
     check_compare_neighboring_steps();
@@ -287,8 +275,4 @@ int main(void) {
     /* store_walk */
     check_walk_key_order();
     check_walk_out_too_small();
-
-    printf("\n%d passed, %d failed\n", total - fails, fails);
-
-    return fails != 0;
 }
