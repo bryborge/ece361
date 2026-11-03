@@ -1,0 +1,12 @@
+# Scenario 1: normal operation. REMOTE opens the door, it stays open, and
+# REMOTE closes it. Comments give the state the door should be in.
+start 1791273600                # 2026-10-06 08:00:00 UTC
+# tick  temp   rh    switches
+0       15.0   60    0x0        # CLOSED
+5       15.0   60    0x1        # REMOTE pressed: OPENING
+6       15.0   60    0x0        # released
+20      15.0   60    0x0        # OPEN (15 ticks after the press)
+30      15.0   60    0x1        # REMOTE pressed: CLOSING
+31      15.0   60    0x0        # released
+45      15.0   60    0x0        # CLOSED (15 ticks after the press)
+50      15.0   60    0x0        # still CLOSED
