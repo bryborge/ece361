@@ -140,7 +140,39 @@ the whole state machine is tested without iom361.
 
 ## State machine drawing
 
-TBD (week 5)
+Each arrow is labeled with its events, then `/` and the action when it is
+not `A_NONE`. Events are written without the `E_` prefix and actions without
+the `A_` prefix.
+
+```text
+        +--------+  REMOTE, REMOTE_BARRIER  +---------+  TIMEOUT  +------+
+start-->| CLOSED |------------------------->| OPENING |---------->| OPEN |--+
+        +--------+                          +---------+           +------+  |
+            ^                                 |   ^  ^                      |
+            |                  REMOTE,        |   |  |                      |
+            |                  REMOTE_FROZEN  |   |  |  TIMEOUT             |
+            |                  (both ways)    |   |  +------------+         |
+            |                                 v   |               |         |
+            |       TIMEOUT               +---------+       +------------+  |
+            +-----------------------------| CLOSING |------>| OBSTRUCTED |  |
+                                          +---------+       +------------+  |
+                                            ^         BARRIER / OBSTRUCT    |
+                                            |                               |
+                                            +-------------------------------+
+                                                  REMOTE, REMOTE_FROZEN
+```
+
+Not drawn: entries that leave the state where it is. These six have an
+action:
+
+| State | Events | Action |
+|---|---|---|
+| `CLOSED` | `REMOTE_FROZEN`, `REMOTE_FROZEN_BARRIER` | `REFUSE_FROZEN` |
+| `OPENING` | `REMOTE_BARRIER`, `REMOTE_FROZEN_BARRIER` | `REFUSE_BARRIER` |
+| `OPEN` | `REMOTE_BARRIER`, `REMOTE_FROZEN_BARRIER` | `REFUSE_BARRIER` |
+
+Also not drawn are the four unreachable entries (†), and every other entry,
+which stays where it is with no action.
 
 ## Decisions where a rule was silent
 
