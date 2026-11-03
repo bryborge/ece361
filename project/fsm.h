@@ -7,6 +7,13 @@
 #ifndef FSM_H
 #define FSM_H
 
+#include <stdbool.h>
+#include <stdint.h>
+
+/* Bits of the switch register (ASSIGNMENT.md section 3). */
+#define SW_REMOTE  (1u << 0)    /* a press: each change from 0 to 1 counts */
+#define SW_BARRIER (1u << 1)    /* a level: on while something is in the way */
+
 /* CLOSED is the initial state. */
 typedef enum { CLOSED, OPENING, OPEN, CLOSING, OBSTRUCTED, N_STATES } state_t;
 
@@ -39,6 +46,20 @@ extern const transition_t fsm_table[N_STATES][N_EVENTS];
  * not `NULL`.
  */
 state_t fsm_step(state_t s, event_t e, action_t *action);
+
+/**
+ * Given the switch register on the previous tick and on this one, returns
+ * whether REMOTE was pressed: its bit went from 0 to 1. Other bits are
+ * ignored.
+ */
+bool fsm_remote_pressed(uint32_t prev, uint32_t now);
+
+/**
+ * Given a state `s`, returns the LED register for it: MOTOR_UP (bit 0) while
+ * OPENING, MOTOR_DOWN (bit 1) while CLOSING, otherwise 0. Assumes `s` is in
+ * range.
+ */
+uint32_t fsm_leds(state_t s);
 
 /**
  * Given a state `s`, returns its name (e.g. `OPENING`), or `?` if `s` is out

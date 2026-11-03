@@ -73,6 +73,34 @@ static void check_step_obstructed(void) {
     CHECK(steps_to(OBSTRUCTED, E_TIMEOUT,               OPENING,    A_NONE));
 }
 
+/* fsm_remote_pressed */
+
+static void check_pressed_rising_edge(void) {
+    CHECK(fsm_remote_pressed(0x0, 0x1));
+}
+
+static void check_pressed_not_an_edge(void) {
+    CHECK(!fsm_remote_pressed(0x1, 0x1));   /* held: counts once, not again */
+    CHECK(!fsm_remote_pressed(0x1, 0x0));   /* released */
+    CHECK(!fsm_remote_pressed(0x0, 0x0));
+}
+
+static void check_pressed_ignores_barrier(void) {
+    CHECK(fsm_remote_pressed(0x2, 0x3));    /* barrier on throughout */
+    CHECK(!fsm_remote_pressed(0x1, 0x3));   /* barrier came on, REMOTE held */
+    CHECK(!fsm_remote_pressed(0x0, 0x2));   /* barrier alone */
+}
+
+/* fsm_leds: MOTOR_UP is LED 0, MOTOR_DOWN is LED 1 (ASSIGNMENT.md section 3). */
+
+static void check_leds(void) {
+    CHECK(fsm_leds(CLOSED)     == 0x0);
+    CHECK(fsm_leds(OPENING)    == 0x1);
+    CHECK(fsm_leds(OPEN)       == 0x0);
+    CHECK(fsm_leds(CLOSING)    == 0x2);
+    CHECK(fsm_leds(OBSTRUCTED) == 0x0);
+}
+
 /* state_name, event_name, action_name */
 
 static void check_state_name(void) {
@@ -122,6 +150,12 @@ void run_fsm_tests(void) {
     check_step_open();
     check_step_closing();
     check_step_obstructed();
+    /* fsm_remote_pressed */
+    check_pressed_rising_edge();
+    check_pressed_not_an_edge();
+    check_pressed_ignores_barrier();
+    /* fsm_leds */
+    check_leds();
     /* names */
     check_state_name();
     check_state_name_out_of_range();

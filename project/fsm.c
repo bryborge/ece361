@@ -54,6 +54,19 @@ const transition_t fsm_table[N_STATES][N_EVENTS] = {
     },
 };
 
+/* Bits of the LED register (ASSIGNMENT.md section 3). */
+#define LED_MOTOR_UP   (1u << 0)
+#define LED_MOTOR_DOWN (1u << 1)
+
+/* The LEDs for each state: the motor runs only while the door moves. */
+static const uint32_t state_leds[N_STATES] = {
+    [CLOSED]     = 0,
+    [OPENING]    = LED_MOTOR_UP,
+    [OPEN]       = 0,
+    [CLOSING]    = LED_MOTOR_DOWN,
+    [OBSTRUCTED] = 0,
+};
+
 static const char *const state_names[N_STATES] = {
     [CLOSED]     = "CLOSED",
     [OPENING]    = "OPENING",
@@ -97,6 +110,30 @@ state_t fsm_step(state_t s, event_t e, action_t *action) {
 
     *action = t.action;
     return t.next;
+}
+
+/**
+ * Tells whether REMOTE was pressed between two readings of the switches.
+ *
+ * @param prev The switch register on the previous tick.
+ * @param now  The switch register on this tick.
+ * @return true if REMOTE's bit went from 0 to 1; other bits are ignored.
+ */
+bool fsm_remote_pressed(uint32_t prev, uint32_t now) {
+    return !(prev & SW_REMOTE) && (now & SW_REMOTE);
+}
+
+/**
+ * Gives the LED register for a state, so the LEDs can never disagree with
+ * the state they show.
+ *
+ * @param s The state; asserted to be in range.
+ * @return MOTOR_UP while OPENING, MOTOR_DOWN while CLOSING, otherwise 0.
+ */
+uint32_t fsm_leds(state_t s) {
+    assert(s >= 0 && s < N_STATES);
+
+    return state_leds[s];
 }
 
 /**
