@@ -54,6 +54,26 @@ const transition_t fsm_table[N_STATES][N_EVENTS] = {
     },
 };
 
+/* At or below this temperature, REMOTE in CLOSED is refused (rule 3). */
+#define FREEZE_C 1.0f
+
+#define TRAVEL   15     /* ticks for a full open or close (rule 1) */
+#define PAUSE    2      /* ticks OBSTRUCTED holds the door (rule 2) */
+/* CLOSED and OPEN never time out. A time allowed of 0 would behave the same
+ * today, because their timeout entries (†) loop back with A_NONE, but it
+ * would look them up on every tick: an edit to either entry would then act
+ * every tick instead of never. */
+#define NO_TIMER (-1)
+
+/* The press event for each combination of the freeze guard and the barrier,
+ * indexed [frozen][barrier]. */
+static const event_t press_events[2][2] = {
+    [false][false] = E_REMOTE,
+    [false][true]  = E_REMOTE_BARRIER,
+    [true][false]  = E_REMOTE_FROZEN,
+    [true][true]   = E_REMOTE_FROZEN_BARRIER,
+};
+
 /* Bits of the LED register (ASSIGNMENT.md section 3). */
 #define LED_MOTOR_UP   (1u << 0)
 #define LED_MOTOR_DOWN (1u << 1)
@@ -110,6 +130,129 @@ state_t fsm_step(state_t s, event_t e, action_t *action) {
 
     *action = t.action;
     return t.next;
+}
+
+/**
+ * Gives the seconds the door has spent in its current state.
+ *
+ * @param d   The door.
+ * @param now The current time; asserted not before d->entered_at.
+ * @return now - d->entered_at.
+ */
+static int elapsed(const door_t *d, time_t now) {
+    assert(now >= d->entered_at);
+
+    /* Plain subtraction assumes time_t counts whole seconds. POSIX
+     * guarantees that and C11 does not; gmtime and the 2038 question in
+     * ASSIGNMENT.md already depend on it. */
+    return (int)(now - d->entered_at);
+}
+
+/**
+ * Gives the door's position, derived from the clock.
+ *
+ * @param d   The door.
+ * @param now The current time.
+ * @return The position, 0 (down) to TRAVEL (up); asserted to be in range.
+ */
+static int position(const door_t *d, time_t now) {
+    int pos;
+
+    switch (d->state) {
+    case OPENING: pos = d->pos_at_entry + elapsed(d, now); break;
+    case CLOSING: pos = d->pos_at_entry - elapsed(d, now); break;
+    default:      pos = d->pos_at_entry;                   break;
+    }
+    assert(pos >= 0 && pos <= TRAVEL);
+    return pos;
+}
+
+/**
+ * Gives the time the door may spend in its current state, fixed when the
+ * state was entered.
+ *
+ * @param d The door.
+ * @return The ticks left to travel while OPENING or CLOSING, PAUSE while
+ *         OBSTRUCTED, NO_TIMER otherwise.
+ */
+static int time_allowed(const door_t *d) {
+    switch (d->state) {
+    case OPENING:    return TRAVEL - d->pos_at_entry;
+    case CLOSING:    return d->pos_at_entry;
+    case OBSTRUCTED: return PAUSE;
+    default:         return NO_TIMER;
+    }
+}
+
+/**
+ * Tells whether the door's time in its current state is up.
+ */
+static bool timed_out(const door_t *d, time_t now) {
+    int allowed = time_allowed(d);
+
+    return allowed != NO_TIMER && elapsed(d, now) >= allowed;
+}
+
+/**
+ * Looks up event e for the door in the table. If the state changes, takes a
+ * snapshot of the position first (position reads the old state), then
+ * restarts the clock.
+ *
+ * @return The action the table gives.
+ */
+static action_t apply(door_t *d, event_t e, time_t now) {
+    action_t action;
+    state_t next = fsm_step(d->state, e, &action);
+
+    if (next != d->state) {
+        d->pos_at_entry = position(d, now);
+        d->state = next;
+        d->entered_at = now;
+    }
+    return action;
+}
+
+/**
+ * Keeps a tick's action. A tick has at most one: the only action the
+ * barrier gives leaves the door in OBSTRUCTED, where no press is refused,
+ * and the timeout gives none.
+ *
+ * @param kept The tick's action so far.
+ * @param a    The action from the latest lookup.
+ */
+static void keep(action_t *kept, action_t a) {
+    if (a == A_NONE) return;
+
+    assert(*kept == A_NONE);
+    *kept = a;
+}
+
+/**
+ * Runs one tick of the door: the barrier, a press, then the timeout, each
+ * looked up from the state the one before left (SPEC.md, Order).
+ *
+ * @param d             The door; asserted not NULL.
+ * @param now           The current time; asserted not before d->entered_at.
+ * @param prev_switches The switch register on the previous tick.
+ * @param switches      The switch register on this tick.
+ * @param temp_c        The temperature, rounded to 0.1 °C.
+ * @return The tick's action, or A_NONE.
+ */
+action_t fsm_tick(door_t *d, time_t now, uint32_t prev_switches,
+                  uint32_t switches, float temp_c) {
+    assert(d != NULL);
+
+    bool barrier = (switches & SW_BARRIER) != 0;
+    bool frozen = temp_c <= FREEZE_C;
+    action_t action = A_NONE;
+
+    if (barrier) keep(&action, apply(d, E_BARRIER, now));
+    if (fsm_remote_pressed(prev_switches, switches)) {
+        keep(&action, apply(d, press_events[frozen][barrier], now));
+    }
+    if (timed_out(d, now)) keep(&action, apply(d, E_TIMEOUT, now));
+
+    return action;
 }
 
 /**

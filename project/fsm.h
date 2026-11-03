@@ -9,6 +9,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <time.h>
 
 /* Bits of the switch register (ASSIGNMENT.md section 3). */
 #define SW_REMOTE  (1u << 0)    /* a press: each change from 0 to 1 counts */
@@ -40,12 +41,31 @@ typedef struct { state_t next; action_t action; } transition_t;
 
 extern const transition_t fsm_table[N_STATES][N_EVENTS];
 
+/* The door: its state, when it entered that state, and where it was then.
+ * Position runs from 0 (down) to 15 (up); the current position is derived
+ * from the clock (SPEC.md, Position and timer). It starts as
+ * { CLOSED, <scenario start>, 0 }. */
+typedef struct {
+    state_t state;
+    time_t entered_at;
+    int pos_at_entry;
+} door_t;
+
 /**
  * Given a state `s` and an event `e`, returns the next state and stores the
  * action to take in *action. Assumes `s` and `e` are in range and action is
  * not `NULL`.
  */
 state_t fsm_step(state_t s, event_t e, action_t *action);
+
+/**
+ * Runs one tick of the door at time `now`: looks up the barrier, a press,
+ * and the timeout in the table, in that order, and updates *d. Returns the
+ * tick's action, or A_NONE. Assumes `d` is not `NULL` and `now` is not
+ * before `d->entered_at`.
+ */
+action_t fsm_tick(door_t *d, time_t now, uint32_t prev_switches,
+                  uint32_t switches, float temp_c);
 
 /**
  * Given the switch register on the previous tick and on this one, returns
