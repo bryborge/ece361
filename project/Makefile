@@ -10,10 +10,13 @@ all build: build/garage
 build/garage: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
-build/tests/test_store: build/tests/test_store.o build/store.o
+TEST_SRCS = tests/test_main.c tests/test_store.c tests/test_fsm.c
+TEST_OBJS = $(TEST_SRCS:%.c=build/%.o) build/store.o build/fsm.o
+
+build/tests/run_tests: $(TEST_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
-test: build/tests/test_store
+test: build/tests/run_tests
 	./$<
 
 build/%.o: %.c
@@ -23,6 +26,6 @@ build/%.o: %.c
 clean:
 	rm -rf build/
 
--include $(OBJS:.o=.d) build/tests/test_store.d
+-include $(OBJS:.o=.d) $(TEST_OBJS:.o=.d)
 
 .PHONY: all build clean test
