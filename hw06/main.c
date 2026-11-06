@@ -54,7 +54,8 @@ static bool print_trace_line(int tick, const reading_t *r, uint32_t switches,
  *
  * @return true, or false after reporting a failure.
  */
-static bool run_tick(const scenario_t *s, uint32_t *base, int tick, uint32_t *before) {
+static bool run_tick(const scenario_t *s, uint32_t *base, int tick,
+                     uint32_t *before) {
     const scenario_line_t *line = scenario_at(s, tick);
     _iom361_set_sensor1(line->temp_c, line->rh_pct);
     _iom361_set_switches(line->switches);
@@ -118,7 +119,8 @@ int main(int argc, char **argv) {
     int bad_line = scenario_load(fp, &s);
     fclose(fp);
     if (bad_line != 0) {
-        fprintf(stderr, "replay: %s: line %d: invalid scenario line\n", path, bad_line);
+        fprintf(stderr, "replay: %s: line %d: invalid scenario line\n", path,
+                bad_line);
         return 1;
     }
 

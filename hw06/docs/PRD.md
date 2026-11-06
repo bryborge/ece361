@@ -253,7 +253,7 @@ revisited.
 | Question | Decision | Why |
 |----------|----------|-----|
 | `before` at tick 0 | `uint32_t before = 0;`, as in the lecture (slide 22). A switch on at tick 0 counts as a press. | The board did start with that switch off, so it is a real edge. Reading the register first would give the same 0 and add a failure path. |
-| Stopping the loop | `if (tick == last) break` in the body, with a comment. | A tick of `INT_MAX` is accepted, so `tick <= last` could never be false, and incrementing past it is signed overflow. |
+| Stopping the loop | `if (tick == last) return true;` in the body, with a comment. | A tick of `INT_MAX` is accepted, so `tick <= last` could never be false, and incrementing past it is signed overflow. |
 | Trace format | `"%s temp=%.1f rh=%.1f switches=0x%x pressed=0x%x leds=0x%x\n"`, with lowercase, unpadded hex. The LEDs are read after toggling. | The sheet's sample only shows `0x1`, so it does not settle case or padding. A line shows the LEDs as its tick leaves them. |
 | Trace length | No cap. A tick of 2 billion prints 2 billion lines. | It is what the file asks for. |
 | Where the binary is | `build/replay`, not `./replay`. `regress.sh` and the README use that path. | The user's accepted deviation from the sheet: everything the build produces stays in `build/`. |
@@ -477,7 +477,10 @@ Sample question from the assignment [HW]:
 
   **The failure case.** A failed read returns `0xDEADBEEF`. If `panel_led` wrote
   that back with one bit changed, it would be recording an error marker as LED
-  state. So it checks the read's return code and does not write.
+  state. So it checks the read's return code and does not write. No test can show
+  this: reads and writes share `check_access`, so a failed read always means the write
+  would fail the same way. It holds by reading the code, and it matters on real
+  hardware.
 
 Questions the design invites:
 
