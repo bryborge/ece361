@@ -284,7 +284,7 @@ number. That is the cost of keeping the sheet's contract.
 | Added loader tests | Each wrong-line rule, with its exact line number; each range edge, accepted and rejected; exactly 1000 data lines pass and 1001 fail. | The line number is the contract, so a nonzero result is not enough. |
 | Checking the tests | Design-guarding tests run against deliberately broken copies of the code. One-off runs, kept out of the repo. | Shows the tests catch the bug, as in hw05. |
 | `main`'s failure paths | Run by hand and reported, not in `make test`. | The sheet asks only for a comparison of the trace, and `regress.sh` compares stdout. This is a known gap. |
-| Regression scenarios | `toggle.txt`: press, hold and release; two switches together; a switch on at tick 0; values holding across gaps. `edges.txt`: a start at 23:59:58 crossing midnight; temperatures of -50, -0.04 and 150; RH of 0 and 100; switch bits above 3. Each about 15 ticks or fewer. | Together they reach every printed field and format decision above. |
+| Regression scenarios | `toggle.txt`: press, hold and release; two switches together; values holding across gaps; the sheet's sample line, word for word. `edges.txt`: a switch on at tick 0; a start at 23:59:58 crossing midnight; temperatures of -50, -0.04 and 150; RH of 0 and 100; rounding; switch bits above 3. Each about 15 ticks or fewer. | Together they reach every printed field and format decision above. |
 | Expected traces | Written by hand from the sheet, before `main.c` exists. | Generating them from `replay` would only prove that the program agrees with itself. |
 
 **Process**

@@ -9,7 +9,7 @@
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <string.h>
+// #include <string.h>
 #include <time.h>
 
 #include "iom361_r4.h"
