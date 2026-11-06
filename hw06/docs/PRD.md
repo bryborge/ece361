@@ -267,7 +267,8 @@ only the trace, and a partial trace stays if the run stops early.
 | Wrong argument count | `usage: replay scenario.txt` |
 | File will not open | `replay: scenarios/x.txt: No such file or directory` |
 | Load failure | `replay: scenarios/x.txt: line 7: invalid scenario line` |
-| `iom361_initialize` fails, or a register or panel call fails mid-run | `replay: tick 12: register access failed (code 1)` |
+| `iom361_initialize` fails | `replay: iom361_initialize failed (code 1)` |
+| A register or panel call fails mid-run | `replay: tick 12: register access failed (code 1)` |
 | `gmtime` returns NULL | `replay: tick 12: time out of range` |
 
 The load message cannot give a reason, because `scenario_load` returns only a line
