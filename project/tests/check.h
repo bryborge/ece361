@@ -7,7 +7,7 @@
 #ifndef CHECK_H
 #define CHECK_H
 
-#include <stdio.h>
+#include <stdio.h>  // IWYU pragma: keep (CHECK expands to printf)
 
 extern int checks_total;
 extern int checks_failed;
@@ -24,5 +24,6 @@ extern int checks_failed;
 void run_store_tests(void);
 void run_fsm_tests(void);
 void run_sensor_tests(void);
+void run_status_tests(void);
 
 #endif

@@ -6,6 +6,7 @@
  * check; test_main.c runs them and prints the summary.
  */
 #include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "check.h"
@@ -382,6 +383,35 @@ static void check_action_name_out_of_range(void) {
     CHECK(strcmp(action_name((action_t)-1), "?") == 0);
 }
 
+/* fsm_rgb: written out from SPEC.md. */
+static bool rgb_is(state_t s, uint8_t red, uint8_t green, uint8_t blue) {
+    rgb_t c = fsm_rgb(s);
+
+    return c.red == red && c.green == green && c.blue == blue;
+}
+
+static void check_rgb(void) {
+    CHECK(rgb_is(CLOSED,       0, 255,   0));   /* green */
+    CHECK(rgb_is(OPENING,      0, 255, 255));   /* cyan */
+    CHECK(rgb_is(OPEN,         0,   0, 255));   /* blue */
+    CHECK(rgb_is(CLOSING,    255, 255,   0));   /* yellow */
+    CHECK(rgb_is(OBSTRUCTED, 255,   0,   0));   /* red */
+}
+
+/* fsm_freeze_active: rule 3 needs both CLOSED and the cold. */
+static void check_freeze_active(void) {
+    /* CLOSED, either side of FREEZE_C */
+    CHECK(fsm_freeze_active(CLOSED, 1.0f));
+    CHECK(fsm_freeze_active(CLOSED, 0.9f));
+    CHECK(fsm_freeze_active(CLOSED, -50.0f));
+    CHECK(!fsm_freeze_active(CLOSED, 1.1f));
+    /* the cold does not matter in any other state */
+    CHECK(!fsm_freeze_active(OPENING, 0.5f));
+    CHECK(!fsm_freeze_active(OPEN, 0.5f));
+    CHECK(!fsm_freeze_active(CLOSING, 0.5f));
+    CHECK(!fsm_freeze_active(OBSTRUCTED, 0.5f));
+}
+
 void run_fsm_tests(void) {
     /* fsm_step */
     check_step_closed();
@@ -395,6 +425,10 @@ void run_fsm_tests(void) {
     check_pressed_ignores_barrier();
     /* fsm_leds */
     check_leds();
+    /* fsm_rgb */
+    check_rgb();
+    /* fsm_freeze_active */
+    check_freeze_active();
     /* fsm_tick */
     check_full_open_and_close();
     check_held_press_counts_once();
