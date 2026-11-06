@@ -26,5 +26,6 @@ void run_fsm_tests(void);
 void run_sensor_tests(void);
 void run_status_tests(void);
 void run_clock_tests(void);
+void run_scenario_tests(void);
 
 #endif
