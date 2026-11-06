@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -std=c11 -Wall -Wextra -g -I. -fsanitize=address,undefined
+CFLAGS = -std=c11 -Wall -Wextra -g -I. -fsanitize=address,undefined -fno-sanitize-recover=undefined
 LDLIBS = -lm
 
 MODULES = build/sensor.o build/panel.o build/scenario.o build/iom361_r4.o

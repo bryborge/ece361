@@ -181,21 +181,19 @@ The Makefile is written and verified.
 
 ## 7. Implementation recommendations
 
-- **Parsing numbers.** Use `strtoll` for `start`, `strtol` for `tick`, `strtod`
-  for `temp` and `rh`, and `strtoul` in base 16 for `switches`. Each reports where
-  it stopped, which is what catches `15.0abc`, and sets `errno` to `ERANGE` when
-  the value does not fit.
-- **`strtoul` and a minus sign.** `strtoul` accepts `-1` and wraps it to a huge
-  value, so `switches` needs an explicit check for a leading `-`.
-- **Hex in `temp`.** `strtod` also reads `0x10` as 16.0. It is in range and means
-  what it says, so it stays accepted.
+- **Parsing a line.** As in the lecture (slide 29): `strchr` finds the `#` and a
+  `'\0'` there drops the comment, then `sscanf(line, "%d %f %f %x %1s", ...)`
+  reads the fields. The count is the check: 4 is good, fewer means a field is
+  missing, and 5 means something extra. `%1s` is what catches `15.0abc` and
+  `0x1z`. A blank line returns `EOF`. The `start` line works the same way, with
+  `"start %lld %1s"` and a count of 1.
 - **Too-long lines.** With `fgets`, a line is too long when the buffer is full and
   holds no newline. A last line with no newline that fits the buffer is fine, so
   the test also has to check for end of file.
 - **Shifts.** Build LED masks with `1u << n`. `1 << 31` shifts into the sign bit of
   an `int`, which is undefined, and UBSan reports it.
-- **Rounding.** Compute in `double`, as `round(x * 10.0) / 10.0`, and link with
-  `-lm`.
+- **Rounding.** As in the lecture (slide 8): compute in `double`, then
+  `lround(x * 10.0) / 10.0`, and link with `-lm`.
 
 ## 8. Decisions beyond the spec
 
@@ -217,25 +215,38 @@ The Makefile is written and verified.
 |----------|----------|-----|
 | A tick before the first line | The first data tick must be 0, or that line is wrong. | Otherwise the trace depends on values the file never stated. The sheet's example and the project's scenarios all start at 0. A scenario starting later is rejected, which is the known cost. |
 | Accepted forms | Blank lines; whole-line, indented and trailing comments; CRLF; hex with or without `0x`. | Accept what can be interpreted safely. The project's scenario files use trailing comments. |
-| A wrong line | A data line before `start`; a second `start`; a missing or extra field; text that does not parse; a tick that does not increase, or a negative one; data line 1001; a line too long for the buffer. | Each cannot be safely interpreted. The return value is that line's number, counting every physical line, so it matches what an editor shows. |
+| A wrong line | A data line before `start`; a second `start`; a missing or extra field; text that does not parse; a tick that does not increase, or a negative one; data line 1001; a line too long for the buffer. See the known gaps below. | Each cannot be safely interpreted. The return value is that line's number, counting every physical line, so it matches what an editor shows. |
 | Nothing to point at | An empty file, only comments, or `start` with no data returns one past the last line. An empty file returns 1. | The failure must be nonzero to be reported, and this points at where the missing thing was expected. |
 | `temp`, `rh` ranges | `temp` from -50 to 150 and `rh` from 0 to 100, both inclusive. Outside that is a wrong line, as are `nan` and `inf`. | iom361 clamps silently: 200 °C reads back as 150.0, which would hide a typo. Exactly 150 and 100 read back correctly (tested). |
-| `switches`, `tick` ranges | `switches` must fit 32 bits and `tick` must fit an `int`. | They are stored in those types. |
 | Switch bits above 3 | Accepted. iom361 clears them, and the trace shows the masked value. | `scenario.c` does not know the switch count, and those switches do not exist on this board. |
 | `start` range | From 0 to `253402300799` (9999-12-31 23:59:59 UTC), as a named constant with a comment. | A value near `LLONG_MAX` would overflow `start + tick`, which is undefined. Adding `INT_MAX` to the cap reaches only year 10068, which `gmtime` handles (tested). |
+| How lines are parsed | `sscanf` with a field count, as in the lecture (slide 29), not `strto*`. | The lecture's approach, and the simplest. The cost is the known gaps listed below this table. May be revisited during implementation. |
+
+Known gaps from parsing with `sscanf`, all tested on glibc. These lines are
+accepted, and they should be wrong:
+
+| Line | Read as | Why |
+|------|---------|-----|
+| `5.5 40 0x1` | tick 5, temp 0.5, rh 40, switches 0x1 | `%d` stops at the `.`, and `%f` picks up the rest. A field is missing, but the count is still 4. |
+| `99999999999 45 40 0x1` | tick 1215752191 | An out-of-range conversion is undefined in the C standard. This is what glibc does. |
+| `5 45 40 0x1FFFFFFFF` | switches `0xffffffff` | Undefined in the same way. |
+| `5 45 40 -1` | switches `0xffffffff` | `%x` accepts a minus sign. |
+
+Scanning into strings and converting with `strto*` would close all four, if this is
+revisited.
 
 **Sensor and panel**
 
 | Question | Decision | Why |
 |----------|----------|-----|
-| `-0.0` | `sensor_read` adds `0.0f` after rounding, with a comment. | `-0.04` otherwise prints `temp=-0.0` (tested), because `round` keeps the sign. Traces are compared as text, and temperatures near zero are likely in the project's freeze guard. |
+| Rounding, and `-0.0` | `sensor_read` rounds with `lround`, as in the lecture (slide 8). | `round` keeps the sign, so `-0.04` would print `temp=-0.0` (tested). `lround` returns an integer, which has no negative zero, so it reads `0.0` (tested). Traces are compared as text, and temperatures near zero are likely in the project's freeze guard. |
 | Panel failures | `n` is checked first and returns `-1`. A failed read or write returns the iom361 code. A failed read means no write. | The codes (1, 2, 3, 5) cannot collide with `-1`. A failed read returns `0xDEADBEEF`, which must never be written back as LED state. |
 
 **Replay**
 
 | Question | Decision | Why |
 |----------|----------|-----|
-| `before` at tick 0 | Read from the switch register before the loop, which gives 0. A switch on at tick 0 counts as a press. | The board did start with that switch off, so it is a real edge. The sheet's sample shows `pressed=0x1` at tick 2, so it does not settle this. |
+| `before` at tick 0 | `uint32_t before = 0;`, as in the lecture (slide 22). A switch on at tick 0 counts as a press. | The board did start with that switch off, so it is a real edge. Reading the register first would give the same 0 and add a failure path. |
 | Stopping the loop | `if (tick == last) break` in the body, with a comment. | A tick of `INT_MAX` is accepted, so `tick <= last` could never be false, and incrementing past it is signed overflow. |
 | Trace format | `"%s temp=%.1f rh=%.1f switches=0x%x pressed=0x%x leds=0x%x\n"`, with lowercase, unpadded hex. The LEDs are read after toggling. | The sheet's sample only shows `0x1`, so it does not settle case or padding. A line shows the LEDs as its tick leaves them. |
 | Trace length | No cap. A tick of 2 billion prints 2 billion lines. | It is what the file asks for. |
@@ -262,7 +273,8 @@ number. That is the cost of keeping the sheet's contract.
 |----------|----------|-----|
 | The harness | hw05's `CHECK` macro, one PASS or FAIL line per check, and a summary. | The repo's convention. |
 | Added sensor tests | The bit mask, by writing directly to `base[TEMP_REG / 4]`; `-0.04` reads as `0.0`, with its sign checked by `signbit`; a wrong `base` leaves a sentinel `reading_t` unchanged. | `_iom361_set_sensor1` cannot set bits 31..20, and writes to that register are ignored. `-0.0 == 0.0`, so only `signbit` can tell them apart. |
-| Added panel tests | `n` of -1 and 32 returns `-1`; `n` of 31, where UBSan catches a signed shift; a wrong `base` returns its code and leaves the LEDs unchanged. | These guard the boundaries. |
+| Added panel tests | `n` of -1 and 32 returns `-1`; `n` of 31, where UBSan stops a signed shift; a wrong `base` returns its code and leaves the LEDs unchanged. | These guard the boundaries. No test can show that a failed read skips the write: reads and writes share `check_access`, so a failed read always means the write fails the same way. |
+| UBSan and `make test` | `-fno-sanitize-recover=undefined` in `CFLAGS`. | By default UBSan prints a report and the program exits 0, so a `1 << 31` bug would pass `make test` (tested). This differs from hw05's flags. |
 | Added loader tests | Each wrong-line rule, with its exact line number; each range edge, accepted and rejected; exactly 1000 data lines pass and 1001 fail. | The line number is the contract, so a nonzero result is not enough. |
 | Checking the tests | Design-guarding tests run against deliberately broken copies of the code. One-off runs, kept out of the repo. | Shows the tests catch the bug, as in hw05. |
 | `main`'s failure paths | Run by hand and reported, not in `make test`. | The sheet asks only for a comparison of the trace, and `regress.sh` compares stdout. This is a known gap. |
@@ -316,13 +328,7 @@ FUNCTION scenario_load(input, scenario)
         IF the line is not exactly tick, temp, rh, switches THEN
             RETURN line_number
         END IF
-        IF tick does not fit an int THEN
-            RETURN line_number
-        END IF
         IF temp is not from -50 to 150 OR rh is not from 0 to 100 THEN
-            RETURN line_number
-        END IF
-        IF switches does not fit 32 bits THEN
             RETURN line_number
         END IF
         IF count is 0 AND tick is not 0 THEN
@@ -388,7 +394,7 @@ that is not negative.
 
 ```
 FUNCTION replay(scenario, base)
-    SET before TO the switch register, read once before the loop
+    SET before TO 0
     SET last TO the tick of the scenario's last line
     SET tick TO 0
 
@@ -435,12 +441,15 @@ The project's next step: copy `sensor.c`, the scenario code and the loop into
 `project/`, replace the toggling with the state machine, and print the device's
 trace format. It isn't graded and isn't on the Shine. [HW]
 
-Two differences to handle then:
+Three differences to handle then:
 
-- `project/sensor.c` does not keep only bits 19..0, so it should not be the source
-  for anything here.
+- `project/sensor.c` does not keep only bits 19..0, which the lecture calls out as
+  a bug on real hardware (slide 7), so it should not be the source for anything
+  here.
 - The sheet names the timestamp `t`, and `project/sensor.h` names it `timestamp`.
   One side needs a rename.
+- The lecture says to compare thresholds as whole tenths (slide 8). HW6 has no
+  thresholds, but the state machine does.
 
 ## 12. Shine preparation
 
@@ -468,13 +477,28 @@ Questions the design invites:
 - Why does `sensor_read` compute into local variables and store to `*r` last?
   (Because a failed second read must leave `*r` unchanged, even though the first
   read succeeded.)
-- Why keep bits 19..0, when `_iom361_set_sensor1` can't set the others? (The header
-  defines only those 20 bits as the value, and the driver should not depend on the
-  rest being 0. The test has to write to the register directly to reach this.)
+- Why keep bits 19..0, when `_iom361_set_sensor1` can't set the others? (On iom361
+  the upper bits are 0, but on real hardware they can be status bits, and the
+  formula turns them into nonsense. The test has to write to the register directly
+  to reach this.)
 - Why does a reading of 91.0 need rounding? (The register holds a 20-bit integer,
   so 91.0 comes back as 90.99998, which would be below a 91.0 threshold.)
-- Why add `0.0f` after rounding? (`round` keeps the sign, so -0.04 becomes -0.0 and
-  prints with a minus sign. In IEEE 754, -0.0 + 0.0 is +0.0.)
+- Why `lround`, and not `(int)(x + 0.5)` or `round`? (The cast truncates toward zero,
+  so it rounds negatives wrong, and the sensor reads down to -50 °C. `round` keeps
+  the sign, so -0.04 prints as -0.0. `lround` returns an integer, and an integer has
+  no negative zero.)
+- Why does your code need no `volatile`? (iom361 does the access inside its
+  functions. On a board, a register is reached through a `volatile` pointer, so that
+  the compiler really does every read and never caches the value.)
+- Why is `before` saved last in the tick? (A press is off before, on now, so `before`
+  must hold the last tick's reading until this tick has been compared with it. It
+  also has to survive between ticks.)
+- What does integer promotion do to a shift or to `~`? (A type narrower than `int`,
+  such as `uint8_t`, becomes a signed `int` first. So `en << 24` can be undefined, and
+  `~m` gives `0xFFFFFF00`, not `0x00`. Cast to `uint32_t` before you shift.)
+- How does `sscanf` check a line? (Its return value counts the fields it read. `%1s`
+  tries to read one word more, so an extra word gives 5. And what can it miss? See the
+  known gaps in section 8.1.)
 - What is the expression for `panel_pressed`, and why? (`now & ~before`: on now, and
   off before. `panel_released` is `~now & before`. A held switch is on in both, so
   it is in neither.)
