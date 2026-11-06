@@ -12,7 +12,7 @@ uint32_t panel_released(uint32_t now, uint32_t before) {
 int panel_led(uint32_t *base, int n, int on) {
     if (n < 0 || n > 31) return -1;
 
-    /* Read first to avoid writing over the other LEDs state. */
+    /* Read first to avoid writing over the other LEDs' state. */
     int rc;
     uint32_t leds = iom361_readReg(base, LEDS_REG, &rc);
     if (rc != 0) return rc;
@@ -32,7 +32,7 @@ int panel_led(uint32_t *base, int n, int on) {
 int panel_toggle(uint32_t *base, int n) {
     if (n < 0 || n > 31) return -1;
 
-    /* Read first to avoid writing voer the other LEDs state. */
+    /* Read first to avoid writing over the other LEDs' state. */
     int rc;
     uint32_t leds = iom361_readReg(base, LEDS_REG, &rc);
     if (rc != 0) return rc;
