@@ -25,5 +25,6 @@ void run_store_tests(void);
 void run_fsm_tests(void);
 void run_sensor_tests(void);
 void run_status_tests(void);
+void run_clock_tests(void);
 
 #endif
