@@ -103,6 +103,7 @@ The interface decided in section 8:
 
 ```c
 #define SCENARIO_MAX_LINES 1000
+#define SCENARIO_MAX_LINE_LEN 255
 
 typedef struct {
     int tick;
@@ -186,10 +187,13 @@ The Makefile is written and verified.
   reads the fields. The count is the check: 4 is good, fewer means a field is
   missing, and 5 means something extra. `%1s` is what catches `15.0abc` and
   `0x1z`. A blank line returns `EOF`. The `start` line works the same way, with
-  `"start %lld %1s"` and a count of 1.
-- **Too-long lines.** With `fgets`, a line is too long when the buffer is full and
-  holds no newline. A last line with no newline that fits the buffer is fine, so
-  the test also has to check for end of file.
+  `"%6s %lld %1s"` and a count of 2, and the word compared with `strcmp`. A literal
+  `start` in the format would accept `start5`.
+- **Too-long lines.** Size the `fgets` buffer for the longest line, a CRLF and the
+  `'\0'`. Then a line is too long exactly when `strcspn(line, "\r\n")` is above the
+  limit, with or without a line ending, and no check for end of file is needed. A
+  buffer one byte shorter would split the longest CRLF line in two and throw off
+  every later line number.
 - **Shifts.** Build LED masks with `1u << n`. `1 << 31` shifts into the sign bit of
   an `int`, which is undefined, and UBSan reports it.
 - **Rounding.** As in the lecture (slide 8): compute in `double`, then
@@ -216,7 +220,9 @@ The Makefile is written and verified.
 | A tick before the first line | The first data tick must be 0, or that line is wrong. | Otherwise the trace depends on values the file never stated. The sheet's example and the project's scenarios all start at 0. A scenario starting later is rejected, which is the known cost. |
 | Accepted forms | Blank lines; whole-line, indented and trailing comments; CRLF; hex with or without `0x`. | Accept what can be interpreted safely. The project's scenario files use trailing comments. |
 | A wrong line | A data line before `start`; a second `start`; a missing or extra field; text that does not parse; a tick that does not increase, or a negative one; data line 1001; a line too long for the buffer. See the known gaps below. | Each cannot be safely interpreted. The return value is that line's number, counting every physical line, so it matches what an editor shows. |
+| Line length | At most 255 characters, not counting the line ending, as `SCENARIO_MAX_LINE_LEN`. | The buffer must be some size, and tests need the limit to reach its edge. |
 | Nothing to point at | An empty file, only comments, or `start` with no data returns one past the last line. An empty file returns 1. | The failure must be nonzero to be reported, and this points at where the missing thing was expected. |
+| A read error | Returns one past the last line read. | `fgets` also returns NULL on a read error, which must not pass for the end of a good file. No test covers this: a `tmpfile` can't be made to fail partway through a read. |
 | `temp`, `rh` ranges | `temp` from -50 to 150 and `rh` from 0 to 100, both inclusive. Outside that is a wrong line, as are `nan` and `inf`. | iom361 clamps silently: 200 °C reads back as 150.0, which would hide a typo. Exactly 150 and 100 read back correctly (tested). |
 | Switch bits above 3 | Accepted. iom361 clears them, and the trace shows the masked value. | `scenario.c` does not know the switch count, and those switches do not exist on this board. |
 | `start` range | From 0 to `253402300799` (9999-12-31 23:59:59 UTC), as a named constant with a comment. | A value near `LLONG_MAX` would overflow `start + tick`, which is undefined. Adding `INT_MAX` to the cap reaches only year 10068, which `gmtime` handles (tested). |
@@ -345,7 +351,7 @@ FUNCTION scenario_load(input, scenario)
         INCREMENT count
     END WHILE
 
-    IF count is 0 THEN
+    IF count is 0 OR the read stopped on an error THEN
         RETURN line_number + 1
     END IF
     STORE count in scenario
