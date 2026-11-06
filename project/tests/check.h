@@ -23,5 +23,6 @@ extern int checks_failed;
 
 void run_store_tests(void);
 void run_fsm_tests(void);
+void run_sensor_tests(void);
 
 #endif

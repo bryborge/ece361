@@ -14,6 +14,7 @@ int checks_failed;
 int main(void) {
     run_store_tests();
     run_fsm_tests();
+    run_sensor_tests();
 
     printf("\n%d passed, %d failed\n", checks_total - checks_failed, checks_failed);
     return checks_failed != 0;
