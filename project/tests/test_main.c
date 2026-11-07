@@ -18,6 +18,7 @@ int main(void) {
     run_status_tests();
     run_clock_tests();
     run_scenario_tests();
+    run_replay_tests();
 
     printf("\n%d passed, %d failed\n", checks_total - checks_failed, checks_failed);
     return checks_failed != 0;

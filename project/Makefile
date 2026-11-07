@@ -13,7 +13,7 @@ build/garage: $(OBJS)
 
 TEST_SRCS = tests/test_main.c tests/test_store.c tests/test_fsm.c tests/test_sensor.c \
             tests/test_status.c tests/test_clock.c \
-            tests/test_scenario.c
+            tests/test_scenario.c tests/test_replay.c
 TEST_OBJS = $(TEST_SRCS:%.c=build/%.o) build/store.o build/fsm.o build/sensor.o \
             build/bits.o build/status.o build/clock.o \
             build/scenario.o build/iom361_r4/iom361_r4.o
@@ -21,7 +21,8 @@ TEST_OBJS = $(TEST_SRCS:%.c=build/%.o) build/store.o build/fsm.o build/sensor.o 
 build/tests/run_tests: $(TEST_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
-test: build/tests/run_tests
+# The replay tests run build/garage, so it has to be built first.
+test: build/tests/run_tests build/garage
 	./$<
 
 build/%.o: %.c
