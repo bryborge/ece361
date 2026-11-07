@@ -74,10 +74,6 @@ static const event_t press_events[2][2] = {
     [true][true]   = E_REMOTE_FROZEN_BARRIER,
 };
 
-/* Bits of the LED register (ASSIGNMENT.md section 3). */
-#define LED_MOTOR_UP   (1u << 0)
-#define LED_MOTOR_DOWN (1u << 1)
-
 /* The LEDs for each state: the motor runs only while the door moves. */
 static const uint32_t state_leds[N_STATES] = {
     [CLOSED]     = 0,
@@ -85,6 +81,15 @@ static const uint32_t state_leds[N_STATES] = {
     [OPEN]       = 0,
     [CLOSING]    = LED_MOTOR_DOWN,
     [OBSTRUCTED] = 0,
+};
+
+/* The color of each state (SPEC.md, RGB color of each state). */
+static const rgb_t state_rgb[N_STATES] = {
+    [CLOSED]     = {   0, 255,   0 },   /* green */
+    [OPENING]    = {   0, 255, 255 },   /* cyan */
+    [OPEN]       = {   0,   0, 255 },   /* blue */
+    [CLOSING]    = { 255, 255,   0 },   /* yellow */
+    [OBSTRUCTED] = { 255,   0,   0 },   /* red */
 };
 
 static const char *const state_names[N_STATES] = {
@@ -277,6 +282,32 @@ uint32_t fsm_leds(state_t s) {
     assert(s >= 0 && s < N_STATES);
 
     return state_leds[s];
+}
+
+/**
+ * Gives the color for a state, so the RGB LED can never disagree with the
+ * state it shows.
+ *
+ * @param s The state; asserted to be in range.
+ * @return The state's color.
+ */
+rgb_t fsm_rgb(state_t s) {
+    assert(s >= 0 && s < N_STATES);
+
+    return state_rgb[s];
+}
+
+/**
+ * Tells whether a press right now would be refused by the freeze guard.
+ *
+ * @param s      The state; asserted to be in range.
+ * @param temp_c The temperature, rounded to 0.1 °C.
+ * @return true if the door is CLOSED at or below FREEZE_C (rule 3).
+ */
+bool fsm_freeze_active(state_t s, float temp_c) {
+    assert(s >= 0 && s < N_STATES);
+
+    return s == CLOSED && temp_c <= FREEZE_C;
 }
 
 /**

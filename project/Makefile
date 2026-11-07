@@ -1,8 +1,9 @@
 CC = gcc
-CFLAGS = -std=c11 -Wall -Wextra -g -fsanitize=address,undefined -I. -Iiom361_r4 -MMD -MP
+CFLAGS = -std=c11 -Wall -Wextra -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -I. -Iiom361_r4 -MMD -MP
 LDLIBS = -lm
 
-SRCS = main.c sensor.c fsm.c store.c aux.c report.c iom361_r4/iom361_r4.c
+SRCS = main.c sensor.c fsm.c store.c aux.c report.c bits.c status.c clock.c scenario.c \
+       iom361_r4/iom361_r4.c
 OBJS = $(SRCS:%.c=build/%.o)
 
 all build: build/garage
@@ -10,13 +11,18 @@ all build: build/garage
 build/garage: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
-TEST_SRCS = tests/test_main.c tests/test_store.c tests/test_fsm.c
-TEST_OBJS = $(TEST_SRCS:%.c=build/%.o) build/store.o build/fsm.o
+TEST_SRCS = tests/test_main.c tests/test_store.c tests/test_fsm.c tests/test_sensor.c \
+            tests/test_status.c tests/test_clock.c \
+            tests/test_scenario.c tests/test_replay.c
+TEST_OBJS = $(TEST_SRCS:%.c=build/%.o) build/store.o build/fsm.o build/sensor.o \
+            build/bits.o build/status.o build/clock.o \
+            build/scenario.o build/iom361_r4/iom361_r4.o
 
 build/tests/run_tests: $(TEST_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
-test: build/tests/run_tests
+# The replay tests run build/garage, so it has to be built first.
+test: build/tests/run_tests build/garage
 	./$<
 
 build/%.o: %.c

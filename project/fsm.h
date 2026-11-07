@@ -15,6 +15,10 @@
 #define SW_REMOTE  (1u << 0)    /* a press: each change from 0 to 1 counts */
 #define SW_BARRIER (1u << 1)    /* a level: on while something is in the way */
 
+/* Bits of the LED register (ASSIGNMENT.md section 3). */
+#define LED_MOTOR_UP   (1u << 0)
+#define LED_MOTOR_DOWN (1u << 1)
+
 /* CLOSED is the initial state. */
 typedef enum { CLOSED, OPENING, OPEN, CLOSING, OBSTRUCTED, N_STATES } state_t;
 
@@ -38,6 +42,10 @@ typedef enum {
 } action_t;
 
 typedef struct { state_t next; action_t action; } transition_t;
+
+/* An RGB LED color: three duty cycles. fsm.c can't call iom361, so main passes
+ * these to build_rgb_reg. */
+typedef struct { uint8_t red; uint8_t green; uint8_t blue; } rgb_t;
 
 extern const transition_t fsm_table[N_STATES][N_EVENTS];
 
@@ -80,6 +88,19 @@ bool fsm_remote_pressed(uint32_t prev, uint32_t now);
  * range.
  */
 uint32_t fsm_leds(state_t s);
+
+/**
+ * Given a state `s`, returns its color (SPEC.md, RGB color of each state).
+ * Assumes `s` is in range.
+ */
+rgb_t fsm_rgb(state_t s);
+
+/**
+ * Given a state `s` and a temperature, returns whether the freeze guard is
+ * active: a press right now would be refused (rule 3). That takes both CLOSED
+ * and a temperature at or below FREEZE_C. Assumes `s` is in range.
+ */
+bool fsm_freeze_active(state_t s, float temp_c);
 
 /**
  * Given a state `s`, returns its name (e.g. `OPENING`), or `?` if `s` is out
