@@ -106,7 +106,9 @@ the whole state machine is tested without iom361.
 - **Mealy actions, Moore outputs.** Actions sit on transitions. The LEDs
   are read from the state through `uint32_t fsm_leds(state_t s)`, so the
   LED register and the status word's motor bits can never disagree with
-  the state. The RGB color will be read from the state the same way.
+  the state. The RGB color is read from the state the same way, through
+  `rgb_t fsm_rgb(state_t s)`. `fsm.c` makes no iom361 calls, so `main` passes
+  the color to `build_rgb_reg`.
 - **The door and one tick.** `fsm.h` declares
   `typedef struct { state_t state; time_t entered_at; int pos_at_entry; } door_t;`
   and
@@ -218,6 +220,60 @@ which stays where it is with no action.
 - Humidity is read and recorded but gates nothing: no rule gives it a
   threshold, so the only threshold in the rules is `FREEZE_C`.
 
+### Scenario files
+
+The sheet gives the format and leaves these open. `scenario.[ch]` is a module of
+its own, so the loader is tested without iom361. `scenario_load` takes a
+`FILE *`, so that it returns only 0 or the number of the first wrong line, and
+`main` handles a file that won't open.
+
+- **The first data tick must be 0.** Before the first line nothing is in force,
+  and using iom361's reset values would make the trace depend on values the file
+  never stated.
+- **Accepted:** blank lines; whole-line, indented and trailing comments; CRLF; hex
+  with or without `0x`.
+- **A wrong line:** a data line before `start`; a second `start`; a missing or
+  extra field; text that does not parse; a tick that does not increase; data line
+  1001 (a file holds at most 1000 data lines); a line over 255 characters. The
+  number returned counts every line in the file, as an editor does.
+- **Nothing to point at:** an empty file, a file of only comments, or `start` with
+  no data returns the number one past the last line, so the failure is still
+  nonzero.
+- **Ranges:** `temp` from -50 to 150 and `rh` from 0 to 100, both inclusive.
+  iom361 clamps anything else without a word, which would hide a typo. `start` from
+  0 to 253402300799 (the end of the year 9999), so `start + tick` can't overflow.
+- **Switch bits above switch 1** are accepted, and iom361 clears them, so the trace
+  shows what the board sees. `scenario.c` does not know the switch count.
+- **Lines are parsed with `sscanf` and a field count,** as in lecture. That leaves
+  these gaps: `5.5 40 0x1` loads as tick 5 and temperature 0.5, because `%d` stops
+  at the `.`; `5 45 40 -1` loads with every switch bit set, because `%x` accepts a
+  minus sign; a tick or switch value too large for its type also loads, because an
+  out-of-range conversion is undefined in the C standard. Scanning into strings and
+  converting with `strto*` would close all of them.
+- **The line in force** is found by a linear scan: at most 1000 comparisons per
+  tick, and no measurement or requirement calls for less.
+
+### The replay
+
+- **The first tick.** `prev_switches` starts at 0, so a switch already on at tick 0
+  counts as a press: the board starts with every switch off, so that is a real
+  edge.
+- **The trace shows the tick's result:** the state, LEDs and status after the state
+  machine has run. The hex is lowercase; `leds` is unpadded and `status` is 8 digits,
+  as in the sheet's sample line.
+- **The stop test is in the loop's body.** A last tick of `INT_MAX` is accepted, so
+  `tick <= last` could never be false, and `tick++` would overflow.
+- **Failures** print one line on stderr and exit with status 1. stdout holds only
+  the trace, and a partial trace stays if the run stops early.
+- **A full store stops the run** (`garage: tick 1024: store full`). A missing record
+  is lost data, and the report depends on the records. The week-8 tree removes the
+  limit.
+- **`--report` is a usage error until week 9,** when `report.c` exists. That choice
+  gets re-evaluated then.
+- **Not covered by `make test`:** `main`'s RGB write, because neither the trace nor
+  the display (off during a replay) shows it. `fsm_rgb` is tested, and the write was
+  checked by hand once, with the display on.
+
 ### Known limitation
 
 - **Sampled input.** The switches are read once per tick, so a press and
@@ -260,15 +316,69 @@ TBD (week 9)
 
 ## Status word bit layout
 
-TBD (week 3)
+One `uint32_t`, packed and unpacked in `status.c` with hw01's `get_field` and
+`set_field` (`bits.[ch]`, copied unchanged). Unused bits are 0.
+
+| Bits | Field | Values |
+|---|---|---|
+| 2..0 | state | `CLOSED` 0, `OPENING` 1, `OPEN` 2, `CLOSING` 3, `OBSTRUCTED` 4 |
+| 3 | `MOTOR_UP` | 1 while `OPENING` |
+| 4 | `MOTOR_DOWN` | 1 while `CLOSING` |
+| 5 | freeze guard active | 1 while `CLOSED` at or below 1.0 °C |
+| 31..6 | unused | 0 |
+
+So the words are `CLOSED` `0x00` (`0x20` with the guard active), `OPENING` `0x09`,
+`OPEN` `0x02`, `CLOSING` `0x13`, and `OBSTRUCTED` `0x04`. The fields are contiguous:
+the sheet's sample `0x00000011` comes from a different layout, and it says the layout
+is ours to choose.
+
+**Freeze guard active** means a press on this tick would have been refused. Rule 3
+needs both `CLOSED` and the cold, so the bit needs both too. It stays off while an
+open door closes in the cold, where the cold does not matter, and it is computed
+after the tick's state change, so it comes on the tick a cold door reaches `CLOSED`.
+`bool fsm_freeze_active(state_t s, float temp_c)` is in `fsm.c`, because `FREEZE_C` is
+private there.
+
+`status_of(state, temp_c)` builds the status from `fsm_leds` and `fsm_freeze_active`,
+so the motor bits can't disagree with the LEDs.
 
 ## RGB color of each state
 
-TBD (week 6)
+The RGB LED is always enabled, and its color comes from the state.
+
+| State | Color | Red, green, blue |
+|---|---|---|
+| `CLOSED` | green | 0, 255, 0 |
+| `OPENING` | cyan | 0, 255, 255 |
+| `OPEN` | blue | 0, 0, 255 |
+| `CLOSING` | yellow | 255, 255, 0 |
+| `OBSTRUCTED` | red | 255, 0, 0 |
+
+Closed and safe is green, the door coming down is the caution color, and a door
+stopped by the barrier is red.
 
 ## 2038
 
-TBD
+A 32-bit `time_t` runs out at 2038-01-19 03:14:07 UTC. Adding a tick past that is
+signed overflow, which C leaves undefined; in practice it wraps to 1901-12-13.
+
+What that does depends on the state the door is in:
+
+- **`OPENING`, `CLOSING` or `OBSTRUCTED`:** these have a timer, so every tick calls
+  `elapsed`. `now` has fallen below `entered_at`, so its `assert` stops the program
+  mid-travel, with the motor LED still lit.
+- **`CLOSED` or `OPEN`:** these have no timer and never call `elapsed`, so the door
+  keeps working. The next press stamps a new `entered_at`, and from then on the
+  arithmetic is consistent again.
+
+Either way, the trace dates and record timestamps jump back to 1901.
+
+The `assert` is what makes the failure loud. Without it, `now - entered_at` also
+overflows, and if it wraps the way the clock did, it gives the right small number, so
+the door would finish its travel. That would be luck: it is still undefined behavior.
+
+The cap on `start` wouldn't help either, because it assumes a `time_t` wider than 32
+bits. A real fix is a 64-bit `time_t`, which is what this project runs on.
 
 ## The given states: defend or criticize
 

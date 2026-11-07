@@ -13,7 +13,14 @@ Weekly plan is in ASSIGNMENT.md section 8. Work only at the current week's stage
 - Carry over from HW5: `transition_t`, `A_UNDEFINED` = 0, an `N_*` count at the end of each enum, `fsm_step` as one lookup with asserts on its arguments, `state_name`, `event_name` and `action_name` with two-sided bounds checks, and the startup check in `main` that no entry is `A_UNDEFINED`. Not carried over: `fsm_check`.
 - Tests: every cell, written out from SPEC.md rather than read from the code, plus sequences run through `fsm_tick` in a `runs_to`-style helper, including a reversal mid-travel that checks the length of the return trip, a press on each state's last tick, and a press on the tick the pause ends. Scenario files 1, 3 and 4 this week; their expected traces wait for the replay in week 6.
 - `now - entered_at` gets a comment citing the POSIX assumption.
-- Deferred: the status word, including what the "freeze guard active" bit means, is settled in its own session.
+
+**Week 6:** the sensor, the clock, the status word, and the replay in `main.c` are done, and SPEC.md records the decisions. `sensor.c`, `scenario.[ch]` and the replay come from `hw06/`, with `fsm_tick` in place of hw06's toggling. Scenarios 1, 3, 4, 5 and 7 have hand-derived traces in `scenarios/<name>.expected`, compared by `tests/test_replay.c`, which runs `build/garage` through `system()`.
+
+**To re-evaluate when their week comes:**
+
+- **Week 7:** `main` ignores `fsm_tick`'s return value. It goes onto the event stack.
+- **Week 8:** `main` stops with `store full` at 1024 records. The tree removes the limit, so that failure path and its test in `tests/test_replay.c` change.
+- **Week 9:** `--report` is a usage error today (`main.c`, argument check). When `report.c` lands, re-evaluate this fail behavior and replace it with the real mode, along with its check in `tests/test_replay.c`.
 
 ## Ground rules
 
@@ -37,6 +44,10 @@ Weekly plan is in ASSIGNMENT.md section 8. Work only at the current week's stage
 | `store.[ch]` | Opaque `store_t`, ordered by temperature quantized to 0.5 °C via a single `record_compare`. Starts as a sorted array (week 4), becomes a BST in week 8 with no change outside `store.c`. |
 | `aux.[ch]` | Opaque stack of events, starts at 8 slots, doubles when full. |
 | `report.[ch]` | Moving average over W readings (W is a parameter). Reads the store through `store.h` only. |
+| `status.[ch]` | Packs and unpacks the status word with `get_field` and `set_field`. |
+| `bits.[ch]` | `get_field` and `set_field`, copied unchanged from `hw01`. |
+| `clock.[ch]` | Turns a `time_t` into the trace's UTC text. |
+| `scenario.[ch]` | Loads a scenario file, and gives the line in force at a tick. No iom361 calls. |
 | `main.c` | Scenario replay and trace output. |
 
 ## iom361 gotchas
@@ -49,6 +60,6 @@ Weekly plan is in ASSIGNMENT.md section 8. Work only at the current week's stage
 
 ## Other
 
-- The status word is one `uint32_t` packed with the student's HW1 `get_field` and `set_field` (reuse from `hw01`, do not rewrite). Unused bits are 0.
+- The status word is one `uint32_t` packed with the student's HW1 `get_field` and `set_field` (reused from `hw01` in `bits.[ch]`, not rewritten). SPEC.md gives the layout. Unused bits are 0.
 - Trace line format is fixed by ASSIGNMENT.md section 4 so tests can diff it against expected files.
 - No em-dashes in any prose here (docs, comments, SPEC.md). Rewrite the sentence with a comma, colon, period, parentheses, or a conjunction.

@@ -6,6 +6,7 @@
 |------|-------|----------|
 | Claude Code | Sonnet 5.5 | Week 2: CLAUDE.md, module stubs, Makefile, SPEC.md skeleton |
 | Claude Code | Opus 5.5 | Week 5: reviewing my draft transition table, a design interview on the fixes, moving the confirmed design into SPEC.md |
+| Claude Code | Opus 5.5 | Week 6: a design interview on the status word, RGB colors and failure behavior, carrying `sensor.c`, the scenario code and the loop over from `hw06/`, writing `main.c` and its tests test first, deriving the expected traces, and moving the decisions into SPEC.md |
 
 ## What it got wrong
 
@@ -26,3 +27,11 @@
 **A script that edited more than it was meant to.** To remove the `E_NONE` column from the transition table, Claude ran a script that dropped a cell from every table row starting with a state name. That also matched three rows of the position table, and deleted their "Position now" cells. It noticed only on its next read of the file, and restored them when moving the table into SPEC.md.
 
 **A design that crashed, defended by an overstated objection.** Claude proposed looking up events in the order barrier, timeout, press. In a final consistency pass it found that this order lets the door enter `CLOSING` at position 0 with no time allowed, so the next tick computes position -1 and the bounds `assert` fires. It had earlier rejected press before timeout, calling a cold press on `CLOSING`'s last tick a hole in the freeze guard, but my own table says the cold only matters in `CLOSED`. When I asked whether barrier, press, timeout would work, it did, and it is simpler: one timeout check and at most one transition per tick.
+
+### Week 6
+
+**A 2038 answer it had not checked.** It told me that if `time_t` wrapped and the `assert` in `elapsed` were gone, `elapsed` would be hugely negative, so the door would never time out and the motor would run on forever. It also said a closed or open door wouldn't notice until the next press, which implied the press would break something. I accepted that answer. When it went to write it into SPEC.md, it reread `fsm.c` and ran the arithmetic: if the subtraction wraps, it gives the right small number, and the door finishes its travel. A closed or open door keeps working, because it has no timer and the next press stamps a new `entered_at`. It corrected the answer and told me.
+
+**A number from memory.** It wrote the timestamp for 2027-02-28 23:59:59 in the clock tests from memory, and got it wrong. Printing it with `date` caught this before the first green run, so the wrong value never looked like a bug in `clock.c`.
+
+**A mutation result that meant nothing.** It reported that a too-small buffer in `clock.h` survived the tests. The mutant had never been compiled, because `clock.c` still included the original header. Rerun properly, sizes 19 and 20 fail.
