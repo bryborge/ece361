@@ -12,8 +12,9 @@ build/replay: build/main.o $(MODULES)
 build/tests/test_hw06: build/tests/test_hw06.o $(MODULES)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
-test: build/tests/test_hw06
+test: build/tests/test_hw06 build/replay
 	./build/tests/test_hw06
+	sh regress.sh
 
 build/%.o: %.c
 	@mkdir -p $(@D)
