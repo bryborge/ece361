@@ -1,7 +1,7 @@
 CC = gcc
-CFLAGS = -std=c11 -Wall -Wextra -g -Ilib -fsanitize=address,undefined -fno-sanitize-recover=undefined
+CFLAGS = -std=c11 -Wall -Wextra -g -I. -Iexternal -fsanitize=address,undefined -fno-sanitize-recover=undefined
 
-MODULES = build/lib/iom361_r4.o
+MODULES = build/external/iom361_r4.o build/panel.o
 
 all: build/replay
 
@@ -18,9 +18,10 @@ build/%.o: %.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-build/main.o: main.c lib/iom361_r4.h
-build/lib/iom361_r4.o: lib/iom361_r4.c lib/iom361_r4.h
-build/tests/test_hw06.o: tests/test_hw06.c lib/iom361_r4.h
+build/main.o: main.c external/iom361_r4.h panel.h
+build/external/iom361_r4.o: external/iom361_r4.c external/iom361_r4.h
+build/panel.o: panel.c panel.h
+build/tests/test_hw06.o: tests/test_hw06.c external/iom361_r4.h panel.h
 
 clean:
 	rm -rf build
