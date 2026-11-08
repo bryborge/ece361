@@ -1,16 +1,40 @@
+#include <errno.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 #include "iom361_r4.h"
 #include "panel.h"
+#include "scenario.h"
 #include "sensor.h"
 
 #define NUM_SWITCHES 4
 #define NUM_LEDS 4
 
-int main(void) {
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "usage: replay scenario.txt\n");
+        return 1;
+    }
+
+    FILE *fp = fopen(argv[1], "r");
+
+    if (fp == NULL) {
+        fprintf(stderr, "replay: %s: %s\n", argv[1], strerror(errno));
+        return 1;
+    }
+
+    scenario_t scenario;
+    int bad_line = scenario_load(fp, &scenario);
+    fclose(fp);
+
+    if (bad_line != 0) {
+        fprintf(stderr, "replay: %s:%d: bad line\n", argv[1], bad_line);
+        return 1;
+    }
+
     int rc;
     uint32_t *base = iom361_initialize(NUM_SWITCHES, NUM_LEDS, &rc);
 
@@ -21,19 +45,18 @@ int main(void) {
 
     iom361_set_display(false);  /* Turn LED display off so it doesn't interfere with printed output. */
 
-    /* the world, one switch reading per tick; a scenario file replaces it */
-    const uint32_t switches[] = {0x0, 0x1, 0x1, 0x0, 0x1, 0x6};
-    const size_t num_ticks = sizeof switches / sizeof switches[0];
-    const time_t start = 1791273600;    /* 2026-10-06 08:00:00 UTC */
-
     uint32_t before = 0;
 
-    for (size_t tick = 0; tick < num_ticks; tick++) {
-        _iom361_set_switches(switches[tick]);
-        _iom361_set_sensor1(91.0f, 40.0f);
+    const int last_tick = scenario.lines[scenario.count - 1].tick;
+
+    for (int tick = 0; tick <= last_tick; tick++) {
+        const scenario_line_t *line = scenario_at(&scenario, tick);
+
+        _iom361_set_switches(line->switches);
+        _iom361_set_sensor1(line->temp_c, line->rh_pct);
 
         /* one second per tick */
-        time_t t = start + (time_t) tick;
+        time_t t = scenario.start + tick;
 
         reading_t reading;
         sensor_read(base, t, &reading);

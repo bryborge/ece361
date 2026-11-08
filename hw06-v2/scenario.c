@@ -1,0 +1,84 @@
+/*
+ * scenario.c:
+ *
+ * Parses a scenario file, one line at a time.
+ */
+#include <inttypes.h>
+#include <stdbool.h>
+#include <string.h>
+
+#include "scenario.h"
+
+/**
+ * Translates and checks each line as it reads it. sscanf's match count says
+ * whether a line is well formed; seen_start and the last stored tick carry what
+ * the checks need from one line to the next.
+ */
+int scenario_load(FILE *fp, scenario_t *s) {
+    char line[256];
+    int line_number = 0;
+    bool seen_start = false;
+
+    s->count = 0;
+
+    while (fgets(line, sizeof line, fp) != NULL) {
+        line_number++;
+
+        /* Is this a comment? If so, drop it. */
+        char *hash = strchr(line, '#');
+        if (hash != NULL) *hash = '\0';
+
+        /* Is this a blank line? If so, skip it. */
+        char word[2];
+        if (sscanf(line, "%1s", word) != 1) continue;
+
+        /* Is this the start line? If so, mark it and proceed. */
+        long long start;
+        if (sscanf(line, " start %lld %1s", &start, word) == 1) {
+            s->start = start;
+            seen_start = true;
+            continue;
+        }
+
+        /* Is this data before the start line? If so, return. */
+        if (!seen_start) return line_number;
+
+        /* Have we reached the max number of lines for this scenario? Return. */
+        if (s->count == SCENARIO_MAX_LINES) return line_number;
+
+        /* Is this a data line, with exactly four fields? If not, return. */
+        scenario_line_t *data = &s->lines[s->count];
+        if (sscanf(line, "%d %f %f %" SCNx32 " %1s", &data->tick, &data->temp_c,
+                   &data->rh_pct, &data->switches, word) != 4) {
+            return line_number;
+        }
+
+        /* Is this the first data line, but not at tick 0? If so, return: the
+           ticks before it would have no values. */
+        if (s->count == 0 && data->tick != 0) return line_number;
+
+        /* Does this tick fail to increase on the last line? If so, return. */
+        if (s->count > 0 && data->tick <= s->lines[s->count - 1].tick) {
+            return line_number;
+        }
+
+        s->count++;
+    }
+
+    /* No data at all? There is no wrong line, so point past the last one. */
+    if (s->count == 0) return line_number + 1;
+
+    return 0;
+}
+
+/**
+ * Searches back from the last line. The first line is at tick 0, so a tick that
+ * is not negative always stops the search.
+ */
+const scenario_line_t *scenario_at(const scenario_t *s, int tick) {
+    int i = s->count - 1;
+
+    while (s->lines[i].tick > tick) i--;
+
+    return &s->lines[i];
+}
