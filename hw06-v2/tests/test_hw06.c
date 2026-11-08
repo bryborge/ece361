@@ -9,6 +9,7 @@
 
 #include "iom361_r4.h"
 #include "panel.h"
+#include "sensor.h"
 
 static int total;
 static int fails;
@@ -83,6 +84,48 @@ static void check_toggle_out_of_range(void) {
     CHECK(leds_of(base) == 0x5);
 }
 
+static void check_sensor_rounds_to_tenths(void) {
+    uint32_t *base = iom361_initialize(4, 4, NULL);
+    reading_t r;
+
+    /* the register holds 90.99998: unrounded, this would sit below 91.0 */
+    _iom361_set_sensor1(91.0f, 40.0f);
+    CHECK(sensor_read(base, 1000, &r) == 0);
+    CHECK(r.t == 1000);
+    CHECK(r.temp_c == 91.0f);
+    CHECK(r.rh_pct == 40.0f);
+
+    /* below zero, where a cast to int would round the wrong way */
+    _iom361_set_sensor1(-12.3f, 40.0f);
+    CHECK(sensor_read(base, 1000, &r) == 0);
+    CHECK(r.temp_c == -12.3f);
+}
+
+static void check_sensor_keeps_bits_19_to_0(void) {
+    uint32_t *base = iom361_initialize(4, 4, NULL);
+    reading_t r;
+
+    _iom361_set_sensor1(91.0f, 40.0f);
+    /* Directly, because _iom361_set_sensor1 can't set these bits and a write
+       to a read-only register is ignored. */
+    base[TEMP_REG / sizeof *base] |= 0xFFF00000u;
+    base[HUMID_REG / sizeof *base] |= 0xFFF00000u;
+    CHECK(sensor_read(base, 1000, &r) == 0);
+    CHECK(r.temp_c == 91.0f);
+    CHECK(r.rh_pct == 40.0f);
+}
+
+static void check_sensor_failed_read(void) {
+    uint32_t *base = iom361_initialize(4, 4, NULL);
+    reading_t r = {.t = 1000, .temp_c = 1.5f, .rh_pct = 2.5f};
+
+    /* not the address iom361_initialize returned, so every read fails */
+    CHECK(sensor_read(base + 1, 2000, &r) == 1);
+    CHECK(r.t == 1000);
+    CHECK(r.temp_c == 1.5f);
+    CHECK(r.rh_pct == 2.5f);
+}
+
 int main(void) {
     iom361_set_display(false);
 
@@ -90,6 +133,9 @@ int main(void) {
     check_toggle_keeps_other_leds();
     check_toggle_top_bit();
     check_toggle_out_of_range();
+    check_sensor_rounds_to_tenths();
+    check_sensor_keeps_bits_19_to_0();
+    check_sensor_failed_read();
 
     printf("%d of %d checks passed\n", total - fails, total);
 

@@ -5,6 +5,7 @@
 
 #include "iom361_r4.h"
 #include "panel.h"
+#include "sensor.h"
 
 #define NUM_SWITCHES 4
 #define NUM_LEDS 4
@@ -18,7 +19,7 @@ int main(void) {
         return 1;
     }
 
-    iom361_set_display(false);
+    iom361_set_display(false);  /* Turn LED display off so it doesn't interfere with printed output. */
 
     /* the world, one switch reading per tick; a scenario file replaces it */
     const uint32_t switches[] = {0x0, 0x1, 0x1, 0x0, 0x1, 0x6};
@@ -29,6 +30,14 @@ int main(void) {
 
     for (size_t tick = 0; tick < num_ticks; tick++) {
         _iom361_set_switches(switches[tick]);
+        _iom361_set_sensor1(91.0f, 40.0f);
+
+        /* one second per tick */
+        time_t t = start + (time_t) tick;
+
+        reading_t reading;
+        sensor_read(base, t, &reading);
+
         uint32_t now = iom361_readReg(base, SWITCHES_REG, NULL);
 
         uint32_t pressed = panel_pressed(now, before);
@@ -39,13 +48,13 @@ int main(void) {
 
         uint32_t leds = iom361_readReg(base, LEDS_REG, NULL);
 
-        /* one second per tick; UTC, so the trace is the same in every time zone */
-        time_t t = start + (time_t) tick;
+        /* UTC, so the trace is the same in every time zone */
         char when[32];
-        strftime(when, sizeof when, "%Y-%m-%d %H:%M:%S", gmtime(&t));
+        strftime(when, sizeof when, "%Y-%m-%d %H:%M:%S", gmtime(&reading.t));
 
-        printf("%s switches=0x%" PRIx32 " pressed=0x%" PRIx32
-               " leds=0x%" PRIx32 "\n", when, now, pressed, leds);
+        printf("%s temp=%.1f rh=%.1f switches=0x%" PRIx32 " pressed=0x%" PRIx32
+               " leds=0x%" PRIx32 "\n", when, reading.temp_c, reading.rh_pct, now,
+               pressed, leds);
 
         before = now;
     }
