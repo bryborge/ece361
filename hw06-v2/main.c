@@ -1,6 +1,7 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <time.h>
 
 #include "iom361_r4.h"
 #include "panel.h"
@@ -17,17 +18,37 @@ int main(void) {
         return 1;
     }
 
-    iom361_writeReg(base, LEDS_REG, 0x1, &rc);
+    iom361_set_display(false);
 
-    uint32_t before = iom361_readReg(base, SWITCHES_REG, &rc);
-    _iom361_set_switches(0x6);
-    uint32_t now = iom361_readReg(base, SWITCHES_REG, &rc);
+    /* the world, one switch reading per tick; a scenario file replaces it */
+    const uint32_t switches[] = {0x0, 0x1, 0x1, 0x0, 0x1, 0x6};
+    const size_t num_ticks = sizeof switches / sizeof switches[0];
+    const time_t start = 1791273600;    /* 2026-10-06 08:00:00 UTC */
 
-    uint32_t pressed = panel_pressed(now, before);
-    uint32_t released = panel_released(now, before);
+    uint32_t before = 0;
 
-    printf("switches=0x%" PRIx32 " pressed=0x%" PRIx32 "\n", now, pressed);
-    printf("switches=0x%" PRIx32 " released=0x%" PRIx32 "\n", now, released);
+    for (size_t tick = 0; tick < num_ticks; tick++) {
+        _iom361_set_switches(switches[tick]);
+        uint32_t now = iom361_readReg(base, SWITCHES_REG, NULL);
+
+        uint32_t pressed = panel_pressed(now, before);
+
+        for (int k = 0; k < NUM_SWITCHES; k++) {
+            if (pressed & (1u << k)) panel_toggle(base, k);
+        }
+
+        uint32_t leds = iom361_readReg(base, LEDS_REG, NULL);
+
+        /* one second per tick; UTC, so the trace is the same in every time zone */
+        time_t t = start + (time_t) tick;
+        char when[32];
+        strftime(when, sizeof when, "%Y-%m-%d %H:%M:%S", gmtime(&t));
+
+        printf("%s switches=0x%" PRIx32 " pressed=0x%" PRIx32
+               " leds=0x%" PRIx32 "\n", when, now, pressed, leds);
+
+        before = now;
+    }
 
     return 0;
 }
