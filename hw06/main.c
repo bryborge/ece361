@@ -61,7 +61,9 @@ int main(int argc, char *argv[]) {
     uint32_t before = 0;
     const int last_tick = scenario.lines[scenario.count - 1].tick;
 
-    for (int tick = 0; tick <= last_tick; tick++) {
+    /* The stop test isn't in the loop header: scenario_load accepts a last tick
+       of INT_MAX, where tick <= last_tick is never false and tick++ overflows. */
+    for (int tick = 0; ; tick++) {
         /* Set the world from the line in force, and the clock to this tick. */
         const scenario_line_t *line = scenario_at(&scenario, tick);
         _iom361_set_switches(line->switches);
@@ -95,6 +97,8 @@ int main(int argc, char *argv[]) {
 
         /* Keep this tick's switches to detect presses on the next one. */
         before = now;
+
+        if (tick == last_tick) break;
     }
 
     return 0;
