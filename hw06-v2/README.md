@@ -18,7 +18,7 @@ the tests set the "world" with its `_iom361_set_...` functions. `sensor.c` and
 | File | What it's for |
 |------|---------------|
 | `main.c` | The replay: one tick at a time, sets the world, runs the device, and prints a trace line. |
-| `panel.h`, `panel.c` | Finds pressed and released switches, and toggles one LED by read-modify-write. |
+| `panel.h`, `panel.c` | Finds pressed and released switches, and changes one LED by read-modify-write. |
 | `sensor.h`, `sensor.c` | `sensor_read`: reads, masks, converts and rounds the temperature and humidity. |
 | `scenario.h`, `scenario.c` | `scenario_load` checks a scenario file and loads it, and `scenario_at` gives the line in force at a tick. |
 | `external/` | The course's I/O module, iom361. |
@@ -86,9 +86,6 @@ in the file. A file with no data lines returns one past its last line.
 
 ### Where this differs from the assignment
 
-- **No `panel_led`.** The sheet requires it and its tests. Nothing in the replay
-  calls it, so I removed it, and I'll rewrite it when something does. `panel_released`
-  stayed, also without a caller, because it's the mirror of `panel_pressed`.
 - **The binary is `build/replay`,** not `./replay`.
 - **iom361 is in `external/`,** not directly in the homework directory.
 

@@ -59,6 +59,42 @@ static void check_pressed_and_released(void) {
     CHECK(panel_released(0x0, 0x80000000u) == 0x80000000u);
 }
 
+static void check_led_keeps_other_leds(void) {
+    uint32_t *base = board_with_leds(0x5);
+
+    CHECK(panel_led(base, 1, 1) == 0);
+    CHECK(leds_of(base) == 0x7);
+    CHECK(panel_led(base, 0, 0) == 0);
+    CHECK(leds_of(base) == 0x6);
+    /* any nonzero on counts as on */
+    CHECK(panel_led(base, 3, 5) == 0);
+    CHECK(leds_of(base) == 0xE);
+}
+
+static void check_led_already_in_state(void) {
+    uint32_t *base = board_with_leds(0x5);
+
+    CHECK(panel_led(base, 0, 1) == 0);
+    CHECK(leds_of(base) == 0x5);
+    CHECK(panel_led(base, 1, 0) == 0);
+    CHECK(leds_of(base) == 0x5);
+}
+
+static void check_led_top_bit(void) {
+    uint32_t *base = board_with_leds(0x0);
+
+    CHECK(panel_led(base, 31, 1) == 0);
+    CHECK(leds_of(base) == 0x80000000u);
+}
+
+static void check_led_out_of_range(void) {
+    uint32_t *base = board_with_leds(0x5);
+
+    CHECK(panel_led(base, -1, 1) == -1);
+    CHECK(panel_led(base, 32, 1) == -1);
+    CHECK(leds_of(base) == 0x5);
+}
+
 static void check_toggle_keeps_other_leds(void) {
     uint32_t *base = board_with_leds(0x5);
 
@@ -235,6 +271,10 @@ int main(void) {
     iom361_set_display(false);
 
     check_pressed_and_released();
+    check_led_keeps_other_leds();
+    check_led_already_in_state();
+    check_led_top_bit();
+    check_led_out_of_range();
     check_toggle_keeps_other_leds();
     check_toggle_top_bit();
     check_toggle_out_of_range();

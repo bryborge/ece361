@@ -31,8 +31,8 @@ typedef struct {
  * Loads the scenario in fp into *s.
  *
  * @return 0, or the number of the first wrong line, counting every line in the
- *         file. A file with no data lines returns one past its last line. After
- *         a nonzero return, *s must not be used.
+ *         file. A file with no data lines, or a read error, returns one past the
+ *         last line read. After a nonzero return, *s must not be used.
  */
 int scenario_load(FILE *fp, scenario_t *s);
 

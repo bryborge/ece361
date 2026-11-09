@@ -36,7 +36,8 @@ tests against deliberately broken copies of the code to show they catch the bug.
 
 **Code before it was needed.** We had agreed that a function gets extracted only when
 the running program needs it. Claude wrote `panel_led` anyway, because the sheet lists
-it next to `panel_toggle`. I noticed it had no caller and had it removed.
+it next to `panel_toggle`. I noticed it had no caller and had it removed. Once the
+replay was done, I had Claude add it back to meet the sheet.
 
 **Tests that proved less than they looked like.** Its first `sensor_read` tests still
 passed with the 20-bit mask deleted, because iom361 keeps the upper bits at 0. Its

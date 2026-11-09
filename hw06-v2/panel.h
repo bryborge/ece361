@@ -28,4 +28,13 @@ uint32_t panel_released(uint32_t now, uint32_t before);
  */
 int panel_toggle(uint32_t *base, int n);
 
+/**
+ * Turns LED n on if on is nonzero, and off otherwise. Every other LED keeps its
+ * state.
+ *
+ * @return 0, -1 if n is not 0 to 31, or the iom361 return code of a failed
+ *         register access.
+ */
+int panel_led(uint32_t *base, int n, int on);
+
 #endif

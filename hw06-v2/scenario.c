@@ -3,6 +3,7 @@
  *
  * Parses a scenario file, one line at a time.
  */
+#include <assert.h>
 #include <inttypes.h>
 #include <stdbool.h>
 #include <string.h>
@@ -65,8 +66,9 @@ int scenario_load(FILE *fp, scenario_t *s) {
         s->count++;
     }
 
-    /* No data at all? There is no wrong line, so point past the last one. */
-    if (s->count == 0) return line_number + 1;
+    /* No data at all, or did fgets stop on a read error instead of the end of
+       the file? There is no wrong line, so point past the last one. */
+    if (s->count == 0 || ferror(fp)) return line_number + 1;
 
     return 0;
 }
@@ -76,6 +78,9 @@ int scenario_load(FILE *fp, scenario_t *s) {
  * is not negative always stops the search.
  */
 const scenario_line_t *scenario_at(const scenario_t *s, int tick) {
+    assert(s->count > 0);
+    assert(tick >= 0);
+
     int i = s->count - 1;
 
     while (s->lines[i].tick > tick) i--;

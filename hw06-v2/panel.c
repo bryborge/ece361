@@ -40,3 +40,21 @@ int panel_toggle(uint32_t *base, int n) {
     iom361_writeReg(base, LEDS_REG, leds, &rc);
     return rc;
 }
+
+/**
+ * The same read-modify-write as panel_toggle. OR sets bit n, and AND with the
+ * inverted mask clears it.
+ */
+int panel_led(uint32_t *base, int n, int on) {
+    if (n < 0 || n > 31) return -1;
+
+    int rc;
+    uint32_t leds = iom361_readReg(base, LEDS_REG, &rc);
+    if (rc != 0) return rc;
+
+    if (on) leds |= 1u << n;
+    else    leds &= ~(1u << n);
+
+    iom361_writeReg(base, LEDS_REG, leds, &rc);
+    return rc;
+}
