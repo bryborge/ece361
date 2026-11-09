@@ -1,12 +1,14 @@
 /*
  * main.c:
  *
- * Replays a scenario file into a trace, one line per tick. The device is simple:
- * a press of switch k toggles LED k. Only this file sets the "world" with iom361's
- * test functions. Everything else reads it through the registers, as on a board.
+ * Replays a scenario file into a trace, one line per tick. The device sees a
+ * press of switch k and it toggles LED k. Only this file sets the "world" with
+ * iom361's test functions. Everything else reads it through the registers, as
+ * it would be on actual hardware.
  */
 #include <errno.h>
-#include <stdbool.h>
+#include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -19,119 +21,85 @@
 #define NUM_SWITCHES 4
 #define NUM_LEDS 4
 
-static bool register_failed(int tick, int rc) {
-    fprintf(stderr, "replay: tick %d: register access failed (code %d)\n", tick, rc);
-    return false;
-}
-
-/**
- * Prints one trace line, with the time in UTC so that a trace is the same on
- * every computer.
- *
- * @return true, or false after reporting a time that gmtime can't split.
- */
-static bool print_trace_line(int tick, const reading_t *r, uint32_t switches,
-                             uint32_t pressed, uint32_t leds) {
-    /* The start cap in scenario.c keeps this from failing on a 64-bit time_t,
-     * but the C standard allows NULL, and strftime would crash on it. */
-    const struct tm *utc = gmtime(&r->t);
-    if (utc == NULL) {
-        fprintf(stderr, "replay: tick %d: time out of range\n", tick);
-        return false;
-    }
-
-    char when[32];      /* Room for the 5-digit years the start cap allows. */
-    strftime(when, sizeof when, "%Y-%m-%d %H:%M:%S", utc);
-    printf("%s temp=%.1f rh=%.1f switches=0x%x pressed=0x%x leds=0x%x\n", when,
-           r->temp_c, r->rh_pct, switches, pressed, leds);
-    return true;
-}
-
-/**
- * Runs the device for one tick: sets the world from the line in force, reads it
- * back through the registers, toggles LED k for every switch k just pressed, and
- * prints a trace line. *before holds the last tick's switches.
- *
- * @return true, or false after reporting a failure.
- */
-static bool run_tick(const scenario_t *s, uint32_t *base, int tick,
-                     uint32_t *before) {
-    const scenario_line_t *line = scenario_at(s, tick);
-    _iom361_set_sensor1(line->temp_c, line->rh_pct);
-    _iom361_set_switches(line->switches);
-
-    reading_t r;
-    int rc = sensor_read(base, s->start + tick, &r);
-    if (rc != 0) return register_failed(tick, rc);
-
-    uint32_t switches = iom361_readReg(base, SWITCHES_REG, &rc);
-    if (rc != 0) return register_failed(tick, rc);
-
-    uint32_t pressed = panel_pressed(switches, *before);
-    for (int k = 0; k < NUM_SWITCHES; k++) {
-        if (pressed & (1u << k)) {
-            rc = panel_toggle(base, k);
-            if (rc != 0) return register_failed(tick, rc);
-        }
-    }
-
-    uint32_t leds = iom361_readReg(base, LEDS_REG, &rc);
-    if (rc != 0) return register_failed(tick, rc);
-
-    if (!print_trace_line(tick, &r, switches, pressed, leds)) return false;
-
-    /* Saved last: a press is off in the last tick and on in this one. */
-    *before = switches;
-    return true;
-}
-
-/**
- * Runs every tick from 0 to the last one.
- *
- * @return true, or false after reporting a failure.
- */
-static bool replay(const scenario_t *s, uint32_t *base) {
-    uint32_t before = 0;
-    int last = s->lines[s->count - 1].tick;
-
-    /* The stop test is not in the loop header. A last tick of INT_MAX is accepted,
-     * so tick <= last could never be false, and tick++ would overflow. */
-    for (int tick = 0; ; tick++) {
-        if (!run_tick(s, base, tick, &before)) return false;
-        if (tick == last) return true;
-    }
-}
-
-int main(int argc, char **argv) {
+int main(int argc, char *argv[]) {
+    /* Invoked w/ correct number of arguments? If not, err and return. */
     if (argc != 2) {
         fprintf(stderr, "usage: replay scenario.txt\n");
         return 1;
     }
-    const char *path = argv[1];
 
-    FILE *fp = fopen(path, "r");
+    /* Successfully open the scenario file? If not, err and return. */
+    FILE *fp = fopen(argv[1], "r");
     if (fp == NULL) {
-        fprintf(stderr, "replay: %s: %s\n", path, strerror(errno));
+        fprintf(stderr, "replay: %s: %s\n", argv[1], strerror(errno));
         return 1;
     }
 
-    scenario_t s;
-    int bad_line = scenario_load(fp, &s);
+    /* Successfully load the scenario file? If not, err and return. */
+    scenario_t scenario;
+    int bad_line = scenario_load(fp, &scenario);
     fclose(fp);
     if (bad_line != 0) {
-        fprintf(stderr, "replay: %s: line %d: invalid scenario line\n", path,
-                bad_line);
+        fprintf(stderr, "replay: %s:%d: bad line\n", argv[1], bad_line);
         return 1;
     }
 
+    /* Did iom361 initialize? If not, err and return. */
     int rc;
     uint32_t *base = iom361_initialize(NUM_SWITCHES, NUM_LEDS, &rc);
     if (base == NULL) {
-        fprintf(stderr, "replay: iom361_initialize failed (code %d)\n", rc);
+        fprintf(stderr, "replay: iom361_initialize failed (rc %d)\n", rc);
         return 1;
     }
-    /* The LED display would print into the trace. */
+
+    /* Turn LED display off so it doesn't interfere with printed output. */
     iom361_set_display(false);
 
-    return replay(&s, base) ? 0 : 1;
+    /**
+     * -------------------------THE MAIN LOOP ---------------------------------
+     */
+    uint32_t before = 0;
+    const int last_tick = scenario.lines[scenario.count - 1].tick;
+
+    /* The stop test isn't in the loop header: scenario_load accepts a last tick
+       of INT_MAX, where tick <= last_tick is never false and tick++ overflows. */
+    for (int tick = 0; ; tick++) {
+        /* Set the world from the line in force, and the clock to this tick. */
+        const scenario_line_t *line = scenario_at(&scenario, tick);
+        _iom361_set_switches(line->switches);
+        _iom361_set_sensor1(line->temp_c, line->rh_pct);
+        time_t t = scenario.start + tick;
+
+        /* Did the sensor read succeed? If not, err and return. */
+        reading_t reading;
+        rc = sensor_read(base, t, &reading);
+        if (rc != 0) {
+            fprintf(stderr, "replay: tick %d: sensor_read failed (rc %d)\n", tick, rc);
+            return 1;
+        }
+
+        /* Toggle LED k for every switch k just pressed. */
+        uint32_t now = iom361_readReg(base, SWITCHES_REG, NULL);
+        uint32_t pressed = panel_pressed(now, before);
+        for (int k = 0; k < NUM_SWITCHES; k++) {
+            /* read - modify - write. */
+            if (pressed & (1u << k)) panel_toggle(base, k);
+        }
+
+        /* Print the trace line (UTC). */
+        uint32_t leds = iom361_readReg(base, LEDS_REG, NULL);
+        char when[32];
+        strftime(when, sizeof when, "%Y-%m-%d %H:%M:%S", gmtime(&reading.t));
+
+        printf("%s temp=%.1f rh=%.1f switches=0x%" PRIx32 " pressed=0x%" PRIx32
+               " leds=0x%" PRIx32 "\n", when, reading.temp_c, reading.rh_pct, now,
+               pressed, leds);
+
+        /* Keep this tick's switches to detect presses on the next one. */
+        before = now;
+
+        if (tick == last_tick) break;
+    }
+
+    return 0;
 }

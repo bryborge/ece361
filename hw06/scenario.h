@@ -1,8 +1,9 @@
 /*
  * scenario.h:
  *
- * A scenario file: the world a replay runs in, as a start time and a line for
- * each tick where a value changes. The values hold between lines.
+ * A scenario file: the world a replay runs in, as a start time and the sensor
+ * and switch values at each tick where they change. The values hold between
+ * lines.
  */
 #ifndef SCENARIO_H
 #define SCENARIO_H
@@ -28,18 +29,17 @@ typedef struct {
 } scenario_t;
 
 /**
- * Loads the scenario in `fp` into *s.
+ * Loads the scenario in fp into *s.
  *
  * @return 0, or the number of the first wrong line, counting every line in the
- *         file. If nothing is wrong except that data is missing (an empty file,
- *         or no data lines), it is the number one past the last line. After a
- *         nonzero return, *s must not be used.
+ *         file. A file with no data lines, or a read error, returns one past the
+ *         last line read. After a nonzero return, *s must not be used.
  */
 int scenario_load(FILE *fp, scenario_t *s);
 
 /**
- * Gives the line in force at `tick`: the last line at or before it. Assumes *s
- * was loaded successfully and `tick` is not negative.
+ * Gives the line in force at tick: the last line at or before it. Assumes *s
+ * was loaded successfully and tick is not negative.
  */
 const scenario_line_t *scenario_at(const scenario_t *s, int tick);
 

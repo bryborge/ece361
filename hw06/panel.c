@@ -1,42 +1,58 @@
+/*
+ * panel.c:
+ *
+ * Edge detection on switch readings, and single-LED changes by
+ * read-modify-write of LEDS_REG.
+ */
 #include "iom361_r4.h"
 #include "panel.h"
 
+/**
+ * A switch was pressed if it is on now and was off before.
+ */
 uint32_t panel_pressed(uint32_t now, uint32_t before) {
     return now & ~before;
 }
 
+/**
+ * The mirror of panel_pressed: on before, off now.
+ */
 uint32_t panel_released(uint32_t now, uint32_t before) {
     return ~now & before;
 }
 
-int panel_led(uint32_t *base, int n, int on) {
+/**
+ * Read-modify-write: the LED register holds every LED, so writing 1u << n
+ * alone would turn all the others off. XOR flips bit n and leaves the others
+ * as they are.
+ */
+int panel_toggle(uint32_t *base, int n) {
     if (n < 0 || n > 31) return -1;
 
-    /* Read first to avoid writing over the other LEDs' state. */
     int rc;
     uint32_t leds = iom361_readReg(base, LEDS_REG, &rc);
     if (rc != 0) return rc;
 
-    /* Unsigned: 1 << 31 would shift into the sign bit of an int. */
-    uint32_t mask = 1u << n;
-    if (on) {
-        leds |= mask;
-    } else {
-        leds &= ~mask;
-    }
+    leds ^= 1u << n;
 
     iom361_writeReg(base, LEDS_REG, leds, &rc);
     return rc;
 }
 
-int panel_toggle(uint32_t *base, int n) {
+/**
+ * The same read-modify-write as panel_toggle. OR sets bit n, and AND with the
+ * inverted mask clears it.
+ */
+int panel_led(uint32_t *base, int n, int on) {
     if (n < 0 || n > 31) return -1;
 
-    /* Read first to avoid writing over the other LEDs' state. */
     int rc;
     uint32_t leds = iom361_readReg(base, LEDS_REG, &rc);
     if (rc != 0) return rc;
 
-    iom361_writeReg(base, LEDS_REG, leds ^ (1u << n), &rc);
+    if (on) leds |= 1u << n;
+    else    leds &= ~(1u << n);
+
+    iom361_writeReg(base, LEDS_REG, leds, &rc);
     return rc;
 }

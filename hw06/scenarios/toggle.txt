@@ -4,12 +4,6 @@ start 1791273600                # 2026-10-06 08:00:00 UTC
 # tick  temp   rh    switches
 0       21.5   40    0x0
 2       21.5   40    0x1        # switch 0 pressed: LED 0 on (the sheet's sample line)
-4       21.5   40    0x0        # released: LED 0 stays on
-5       22.0   41    0x1        # switch 0 pressed again: LED 0 off
-6       22.0   41    0x0        # released
-7       22.0   41    0x3        # switches 0 and 1 pressed together: LEDs 0 and 1 on
-8       22.0   41    0x2        # switch 0 released, switch 1 held
-9       22.0   41    0x6        # switch 2 pressed, switch 1 still held: LED 2 on
-10      22.5   42    0x0        # all released
-13      23.5   45.5  0x8        # switch 3 pressed after a gap: LED 3 on
-14      23.5   45.5  0x0        # released
+4       22.0   41    0x0        # tick 3 held it; released: LED 0 stays on
+5       22.0   41    0x1        # pressed again: LED 0 off
+7       22.6   41    0x6        # tick 6 held it; switch 0 released, 1 and 2 pressed
