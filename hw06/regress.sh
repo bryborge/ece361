@@ -1,7 +1,7 @@
 #!/bin/sh
 # regress.sh: the HW6 regression test. Runs build/replay on every scenario in
 # scenarios/ and compares its output with the file of the same name in expected/.
-# Usage, in hw06-v2/ after make:   sh regress.sh
+# Usage, in hw06/ after make:   sh regress.sh
 # Exits with 1 if replay fails or any output differs, so that make test fails.
 fail=0
 for scenario in scenarios/*.txt; do

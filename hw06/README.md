@@ -6,9 +6,9 @@
 
 ### What is this?
 
-A second build of Homework 6, done for learning. The graded submission is in
-`../hw06/`. This one grew outward from a "hello world" in `main.c`, and a module
-was only pulled out once the running program needed it.
+A second build of Homework 6, which replaced my first as the submission; the first
+is in this repo's history. This one grew outward from a "hello world" in `main.c`,
+and a module was only pulled out once the running program needed it.
 
 The program replays a scenario file into a trace, one line per tick, where a press
 of switch k toggles LED k. iom361 stands in for the hardware, so only `main.c` and
@@ -29,7 +29,7 @@ the tests set the "world" with its `_iom361_set_...` functions. `sensor.c` and
 
 ### Build and test
 
-Run these from `hw06-v2/`:
+Run these from `hw06/`:
 
 ```sh
 make        # builds build/replay
@@ -87,8 +87,12 @@ in the file. A file with no data lines returns one past its last line.
 
 ### Where this differs from the assignment
 
-- **The binary is `build/replay`,** not `./replay`.
-- **iom361 is in `external/`,** not directly in the homework directory.
+These are accepted deviations:
+
+- **The binary is `build/replay`,** not `./replay`, with everything else the build
+  produces.
+- **iom361 is in `external/`,** not directly in `hw06/`, to keep the code I was given
+  apart from the code I wrote.
 
 ### Known gaps
 
@@ -100,7 +104,9 @@ in the file. A file with no data lines returns one past its last line.
 | A second `start` line | Replaces the first, for the whole trace. |
 | `5.5 40 0x1` (a field missing) | Reads as tick 5, temperature 0.5, humidity 40. |
 | A temperature or humidity out of range | iom361 clamps it, so `200` prints as `150.0`. |
+| `nan` or `inf` as a temperature or humidity | iom361 turns it into a reading, so a `nan` temperature prints as `-50.0`. |
 
-**One rule has no test.** `sensor_read` must leave `*r` unchanged when either read
-fails, but iom361 can't be made to fail only the second read. The order of the code
-guarantees it, and a test doesn't.
+**Two rules have no test.** `sensor_read` must leave `*r` unchanged when either read
+fails, but iom361 can't be made to fail only the second read. `scenario_load` must
+fail on a read error partway through a file, but a temporary file can't be made to do
+that. In both cases the code guarantees it, and a test doesn't.

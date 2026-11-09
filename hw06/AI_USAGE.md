@@ -10,7 +10,8 @@
 
 I had already finished hw06, and built it a second time to see whether a cleaner
 implementation would fall out. The goal was learning, so I ranked that above the
-sheet, and asked Claude to work in small steps, the way a person would.
+sheet, and asked Claude to work in small steps, the way a person would. In the end,
+this build replaced the first as my submission, because I understand it better.
 
 Claude scaffolded a "hello world" that lit LED 0, and laid out a path that grew
 outward from `main.c`: read the switches, detect a press, toggle an LED, add a tick
