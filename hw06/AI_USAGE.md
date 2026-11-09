@@ -4,43 +4,50 @@
 
 | Tool | Model | Used for |
 |------|-------|----------|
-| Claude Code | Opus 5.5 | Scaffold, design interview, PRD, implementing every module and the tests, Makefile, README, a draft of this file |
+| Claude Code | Opus 5.5 | Guiding the build order, explaining the code as we went, writing most of the modules, the tests, the Makefile and `regress.sh`, and a draft of this file and the README |
 
 ## Description
 
-Claude scaffolded `hw06/` from the assignment. I had it remove the `.gitkeep` files,
-and move the binary to `build/replay`. That second one is my own deviation from the
-sheet's `./replay`, and the README says so.
+I had already finished hw06, and built it a second time to see whether a cleaner
+implementation would fall out. The goal was learning, so I ranked that above the
+sheet, and asked Claude to work in small steps, the way a person would.
 
-Before any code, Claude quizzed me on every decision the assignment leaves open: how
-`scenario_load` gets its input (a `FILE *`, so that it only ever returns 0 or a line
-number), what happens before the first line (the first tick must be 0), what counts
-as a wrong line, and how `replay` fails. I made each call, and Claude wrote them up
-in `docs/PRD.md`.
+Claude scaffolded a "hello world" that lit LED 0, and laid out a path that grew
+outward from `main.c`: read the switches, detect a press, toggle an LED, add a tick
+loop, the clock, the sensor, the scenario file, and the regression test. It showed
+the bugs along the way before fixing them, such as the plain LED write clearing the
+other LEDs, and 91.0 °C reading back as 90.99998.
 
-I had Claude write the implementation while I reviewed. It worked test first, one
-module at a time: failing tests, then the code, then a cleanup, stopping after each
-one so I could read it. It then ran the tests against deliberately broken copies of
-each module, to show they catch the bug. It wrote the expected traces by hand, before
-`main.c` existed, so that they could not just be copied from its output. I told it
-when to stage and commit.
+I extracted `panel_pressed` and `panel_released` myself. When I got stuck, I asked
+Claude to point out the fixes without making them: types repeated at the call sites,
+`!` where I needed `~`, and a `bool` return that lost which switch was pressed. Claude
+wrote `panel_toggle`, `sensor.c`, `scenario.c`, the tests, the scenarios and
+`regress.sh`, and I read each piece and asked about what I didn't follow.
+
+I made the design calls: keeping the code flat with iom361 in `external/`, removing
+the error checks in `main` that could never fire, keeping the datasheet's names `st`
+and `srh`, rounding with `lround`, requiring the first tick to be 0, and removing
+`panel_led`. I also cut back and rewrote many of the comments.
+
+Claude wrote each expected trace by hand before running `replay` on it, and ran the
+tests against deliberately broken copies of the code to show they catch the bug.
 
 ## What it got wrong
 
-**A claim it had not tested.** It told me UBSan would catch a `1 << 31` bug in
-`panel_led`, and wrote that into the PRD and a test comment. The mutation run showed
-otherwise: UBSan prints a report, and the program still exits 0, so the bug passes
-`make test`. I added `-fno-sanitize-recover=undefined`, and that bug now fails.
+**Code before it was needed.** We had agreed that a function gets extracted only when
+the running program needs it. Claude wrote `panel_led` anyway, because the sheet lists
+it next to `panel_toggle`. I noticed it had no caller and had it removed. Once the
+replay was done, I had Claude add it back to meet the sheet.
 
-**A test that proved less than it looked like.** With the line buffer one byte too
-short, the longest CRLF line gets split in two, and every later line number is off by
-one. The test only checked that the load succeeded, so it passed. A mutation run
-caught this, and Claude added checks on the line number.
+**Tests that proved less than they looked like.** Its first `sensor_read` tests still
+passed with the 20-bit mask deleted, because iom361 keeps the upper bits at 0. Its
+failed-read test accepted any nonzero return, not iom361's code. The broken-copy run
+exposed the mask gap, and it added a test that sets the upper bits directly and
+tightened the check.
 
-**More code than the problem needed.** Its fix for `-0.0` was to add `0.0f` after
-`round`. Slide 8's `lround` returns an integer, which has no negative zero, so the
-extra line was not needed.
+**Comments that confused me.** Its comments on the `sscanf` lines in `scenario_load`
+described the rarest case, a stray fifth word, and never said what each chunk was for.
+I couldn't follow them. We rewrote them as the question each chunk answers.
 
-**A claim it had not checked.** It said all three of my project scenarios start at
-tick 0, when it had only opened one. It checked the other two before I relied on it,
-and the claim held.
+**A wrong number.** It told me removing `panel_led` would fail 11 checks. The count
+dropped by 13.

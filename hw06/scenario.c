@@ -1,114 +1,97 @@
+/*
+ * scenario.c:
+ *
+ * Parses a scenario file, one line at a time.
+ */
 #include <assert.h>
+#include <inttypes.h>
 #include <stdbool.h>
 #include <string.h>
 
 #include "scenario.h"
 
 /* The last second of the year 9999. Adding any int tick still gives a time that
- * fits a time_t and that gmtime can split, so start + tick cannot overflow. */
+   gmtime can split, so start + tick can't overflow or crash the trace. */
 #define START_MAX 253402300799LL
 
-static bool is_blank(const char *line) {
-    char word[2];
-
-    return sscanf(line, "%1s", word) == EOF;
-}
-
 /**
- * Reads a line of exactly "start" and a timestamp. The count is the check: %1s
- * tries to read one word more, so anything extra gives 3. A literal "start" in
- * the format would accept "start5", so the word is read and compared instead.
- *
- * @return true if the line is good.
+ * Translates and checks each line as it reads it. sscanf's match count says
+ * whether a line is well formed; seen_start and the last stored tick carry what
+ * the checks need from one line to the next.
  */
-static bool parse_start(const char *line, time_t *start) {
-    char word[7];
-    long long timestamp;
-    char extra[2];
-
-    if (sscanf(line, "%6s %lld %1s", word, &timestamp, extra) != 2) return false;
-    if (strcmp(word, "start") != 0) return false;
-    if (timestamp < 0 || timestamp > START_MAX) return false;
-
-    *start = (time_t)timestamp;
-    return true;
-}
-
-/**
- * Reads a line of exactly tick, temperature, humidity and switches. iom361 would
- * clamp a value outside the sensor's range without a word, which would hide a
- * typo in the file. Written this way round, the checks also reject nan.
- *
- * @return true if the line is good.
- */
-static bool parse_data(const char *line, scenario_line_t *data) {
-    unsigned switches;
-    char extra[2];
-
-    if (sscanf(line, "%d %f %f %x %1s", &data->tick, &data->temp_c, &data->rh_pct,
-               &switches, extra) != 4) return false;
-    if (!(data->temp_c >= -50.0f && data->temp_c <= 150.0f)) return false;
-    if (!(data->rh_pct >= 0.0f && data->rh_pct <= 100.0f)) return false;
-
-    data->switches = switches;
-    return true;
-}
-
-/**
- * @return true if `tick` can be the next line's tick. Nothing is in force before
- *         the first line, so it has to be 0, or the replay's first ticks would
- *         have no values. This also rejects negative ticks.
- */
-static bool is_next_tick(const scenario_t *s, int tick) {
-    if (s->count == 0) return tick == 0;
-    return tick > s->lines[s->count - 1].tick;
-}
-
 int scenario_load(FILE *fp, scenario_t *s) {
-    /* Room for the longest line, a CRLF and the '\0'. */
-    char line[SCENARIO_MAX_LINE_LEN + 3];
+    char line[SCENARIO_MAX_LINE_LEN + 3];   /* the line, a CRLF and the '\0' */
     int line_number = 0;
     bool seen_start = false;
 
     s->count = 0;
+
     while (fgets(line, sizeof line, fp) != NULL) {
         line_number++;
+
+        /* Is this line too long? If so, return. */
         if (strcspn(line, "\r\n") > SCENARIO_MAX_LINE_LEN) return line_number;
 
-        /* A '\0' at the # ends the string, so sscanf never sees the comment. */
+        /* Is this a comment? If so, drop it. */
         char *hash = strchr(line, '#');
         if (hash != NULL) *hash = '\0';
-        if (is_blank(line)) continue;
 
-        if (!seen_start) {
-            if (!parse_start(line, &s->start)) return line_number;
+        /* Is this a blank line? If so, skip it. */
+        char word[2];
+        if (sscanf(line, "%1s", word) != 1) continue;
+
+        /* Is this the start line? If so, mark it and proceed. */
+        long long start;
+        if (sscanf(line, " start %lld %1s", &start, word) == 1) {
+            if (start < 0 || start > START_MAX) return line_number;
+            s->start = start;
             seen_start = true;
             continue;
         }
 
-        scenario_line_t data;
-        if (!parse_data(line, &data)) return line_number;
-        if (!is_next_tick(s, data.tick)) return line_number;
+        /* Is this data before the start line? If so, return. */
+        if (!seen_start) return line_number;
+
+        /* Have we reached the max number of lines for this scenario? Return. */
         if (s->count == SCENARIO_MAX_LINES) return line_number;
-        s->lines[s->count++] = data;
+
+        /* Is this a data line, with exactly four fields? If not, return. */
+        scenario_line_t *data = &s->lines[s->count];
+        if (sscanf(line, "%d %f %f %" SCNx32 " %1s", &data->tick, &data->temp_c,
+                   &data->rh_pct, &data->switches, word) != 4) {
+            return line_number;
+        }
+
+        /* Is this the first data line, but not at tick 0? If so, return: the
+           ticks before it would have no values. */
+        if (s->count == 0 && data->tick != 0) return line_number;
+
+        /* Does this tick fail to increase on the last line? If so, return. */
+        if (s->count > 0 && data->tick <= s->lines[s->count - 1].tick) {
+            return line_number;
+        }
+
+        s->count++;
     }
 
-    /* fgets also stops on a read error, which must not pass for the end of a
-     * good file. There is no wrong line to name, so it is treated like missing
-     * data. */
+    /* No data at all, or did fgets stop on a read error instead of the end of
+       the file? There is no wrong line, so point past the last one. */
     if (s->count == 0 || ferror(fp)) return line_number + 1;
+
     return 0;
 }
 
+/**
+ * Searches back from the last line. The first line is at tick 0, so a tick that
+ * is not negative always stops the search.
+ */
 const scenario_line_t *scenario_at(const scenario_t *s, int tick) {
-    assert(tick >= 0);
     assert(s->count > 0);
+    assert(tick >= 0);
 
-    /* A linear scan, not a binary search: at most 1000 comparisons per tick, and
-     * no measurement or requirement calls for less. */
-    const scenario_line_t *found = &s->lines[0];
-    for (int i = 1; i < s->count && s->lines[i].tick <= tick; i++) {
-        found = &s->lines[i];
-    }
-    return found;
+    int i = s->count - 1;
+
+    while (s->lines[i].tick > tick) i--;
+
+    return &s->lines[i];
 }

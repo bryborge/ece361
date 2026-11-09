@@ -1,9 +1,7 @@
 /*
  * panel.h:
  *
- * The device's switches and LEDs. Two functions find the edges between two
- * readings of the switch register, and two change one LED while every other LED
- * keeps its state.
+ * A generic device's switches and LEDs.
  */
 #ifndef PANEL_H
 #define PANEL_H
@@ -23,19 +21,20 @@ uint32_t panel_pressed(uint32_t now, uint32_t before);
 uint32_t panel_released(uint32_t now, uint32_t before);
 
 /**
- * Turns LED `n` on if `on` is nonzero, and off otherwise.
+ * Toggles LED n. Every other LED keeps its state.
  *
- * @return 0, -1 if `n` is not 0 to 31, or the iom361 return code of a failed
- *         register access.
- */
-int panel_led(uint32_t *base, int n, int on);
-
-/**
- * Toggles LED `n`.
- *
- * @return 0, -1 if `n` is not 0 to 31, or the iom361 return code of a failed
+ * @return 0, -1 if n is not 0 to 31, or the iom361 return code of a failed
  *         register access.
  */
 int panel_toggle(uint32_t *base, int n);
+
+/**
+ * Turns LED n on if on is nonzero, and off otherwise. Every other LED keeps its
+ * state.
+ *
+ * @return 0, -1 if n is not 0 to 31, or the iom361 return code of a failed
+ *         register access.
+ */
+int panel_led(uint32_t *base, int n, int on);
 
 #endif
