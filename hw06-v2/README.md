@@ -76,8 +76,9 @@ start 1791273600                # 2026-10-06 08:00:00 UTC
 2       21.5   40    0x1        # switch 0 pressed
 ```
 
-A file is a `start` line with a Unix timestamp, then one line per change, up to 1000
-data lines. The values hold until the next line. The first data line must be at tick
+A file is a `start` line with a Unix timestamp from 0 to 253402300799 (the end of the
+year 9999), then one line per change, up to 1000 data lines of at most 255 characters
+each. The values hold until the next line. The first data line must be at tick
 0, and ticks must increase. Comments and blank lines are fine, and the switches are
 hex, with or without `0x`.
 
@@ -99,9 +100,6 @@ in the file. A file with no data lines returns one past its last line.
 | A second `start` line | Replaces the first, for the whole trace. |
 | `5.5 40 0x1` (a field missing) | Reads as tick 5, temperature 0.5, humidity 40. |
 | A temperature or humidity out of range | iom361 clamps it, so `200` prints as `150.0`. |
-
-**A line over 254 characters** gets split in two by `fgets`, even if it's a comment.
-The second piece is then usually rejected, with a line number one too high.
 
 **One rule has no test.** `sensor_read` must leave `*r` unchanged when either read
 fails, but iom361 can't be made to fail only the second read. The order of the code

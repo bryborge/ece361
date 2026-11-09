@@ -12,7 +12,8 @@
 #include <stdio.h>
 #include <time.h>
 
-#define SCENARIO_MAX_LINES 1000
+#define SCENARIO_MAX_LINES 1000     /* data lines; comments and blanks are free */
+#define SCENARIO_MAX_LINE_LEN 255   /* characters, not counting the line ending */
 
 typedef struct {
     int tick;

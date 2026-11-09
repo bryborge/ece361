@@ -10,13 +10,17 @@
 
 #include "scenario.h"
 
+/* The last second of the year 9999. Adding any int tick still gives a time that
+   gmtime can split, so start + tick can't overflow or crash the trace. */
+#define START_MAX 253402300799LL
+
 /**
  * Translates and checks each line as it reads it. sscanf's match count says
  * whether a line is well formed; seen_start and the last stored tick carry what
  * the checks need from one line to the next.
  */
 int scenario_load(FILE *fp, scenario_t *s) {
-    char line[256];
+    char line[SCENARIO_MAX_LINE_LEN + 3];   /* the line, a CRLF and the '\0' */
     int line_number = 0;
     bool seen_start = false;
 
@@ -24,6 +28,9 @@ int scenario_load(FILE *fp, scenario_t *s) {
 
     while (fgets(line, sizeof line, fp) != NULL) {
         line_number++;
+
+        /* Is this line too long? If so, return. */
+        if (strcspn(line, "\r\n") > SCENARIO_MAX_LINE_LEN) return line_number;
 
         /* Is this a comment? If so, drop it. */
         char *hash = strchr(line, '#');
@@ -36,6 +43,7 @@ int scenario_load(FILE *fp, scenario_t *s) {
         /* Is this the start line? If so, mark it and proceed. */
         long long start;
         if (sscanf(line, " start %lld %1s", &start, word) == 1) {
+            if (start < 0 || start > START_MAX) return line_number;
             s->start = start;
             seen_start = true;
             continue;

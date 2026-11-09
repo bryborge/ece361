@@ -6,6 +6,7 @@
  */
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "iom361_r4.h"
 #include "panel.h"
@@ -215,6 +216,97 @@ static void check_load_no_start_line(void) {
     CHECK(load("0 21.5 40 0x0\nstart 1000\n", &s) == 1);
 }
 
+static void check_load_start_range(void) {
+    scenario_t s;
+
+    /* both ends are good */
+    CHECK(load("start 0\n0 21.5 40 0x0\n", &s) == 0);
+    CHECK(load("start 253402300799\n0 21.5 40 0x0\n", &s) == 0);
+    CHECK(s.start == 253402300799LL);
+    /* one past each end */
+    CHECK(load("start -1\n0 21.5 40 0x0\n", &s) == 1);
+    CHECK(load("start 253402300800\n0 21.5 40 0x0\n", &s) == 1);
+    /* these would make gmtime return NULL */
+    CHECK(load("start 99999999999999999\n0 21.5 40 0x0\n", &s) == 1);
+    CHECK(load("start -99999999999999999\n0 21.5 40 0x0\n", &s) == 1);
+    /* the line number counts every line */
+    CHECK(load("# a comment\nstart 253402300800\n0 21.5 40 0x0\n", &s) == 2);
+}
+
+/**
+ * Loads a good start line and data line, then a comment of length characters,
+ * then eol and after. The comment is line 3.
+ */
+static int load_with_comment(int length, const char *eol, const char *after,
+                             scenario_t *s) {
+    char comment[400];
+    char text[600];
+
+    memset(comment, 'x', sizeof comment);
+    comment[0] = '#';
+    comment[length] = '\0';
+    snprintf(text, sizeof text, "start 1000\n0 21.5 40 0x0\n%s%s%s", comment, eol, after);
+    return load(text, s);
+}
+
+static void check_load_long_lines(void) {
+    scenario_t s;
+    char text[600];
+
+    /* the longest line, with each line ending and with none */
+    CHECK(load_with_comment(255, "\n", "", &s) == 0);
+    CHECK(load_with_comment(255, "\r\n", "", &s) == 0);
+    CHECK(load_with_comment(255, "", "", &s) == 0);
+    /* it stays one line, so the next line's number is right */
+    CHECK(load_with_comment(255, "\n", "hello\n", &s) == 4);
+    CHECK(load_with_comment(255, "\r\n", "hello\n", &s) == 4);
+    /* one character too many, with each line ending and with none */
+    CHECK(load_with_comment(256, "\n", "", &s) == 3);
+    CHECK(load_with_comment(256, "\r\n", "", &s) == 3);
+    CHECK(load_with_comment(256, "", "", &s) == 3);
+    /* far too long: its tail is not a line of its own */
+    CHECK(load_with_comment(300, "\n", "", &s) == 3);
+    /* a tail that would read as data */
+    CHECK(load_with_comment(257, " 7 99 99 0x1\n", "", &s) == 3);
+    /* a data line too */
+    snprintf(text, sizeof text, "start 1000\n%-300s\n", "0 21.5 40 0x0");
+    CHECK(load(text, &s) == 2);
+}
+
+/**
+ * Loads a start line, then count data lines at ticks 0, 1, 2 and so on, then
+ * after.
+ *
+ * @return what scenario_load returns, or -1 if the temporary file won't open.
+ */
+static int load_data_lines(int count, const char *after, scenario_t *s) {
+    FILE *fp = tmpfile();
+    if (fp == NULL) return -1;
+
+    fputs("start 1000\n", fp);
+    for (int tick = 0; tick < count; tick++) {
+        fprintf(fp, "%d 21.5 40 0x0\n", tick);
+    }
+    fputs(after, fp);
+    rewind(fp);
+    int rc = scenario_load(fp, s);
+    fclose(fp);
+    return rc;
+}
+
+static void check_load_capacity(void) {
+    scenario_t s;
+
+    /* exactly full, and the last line is really there */
+    CHECK(load_data_lines(SCENARIO_MAX_LINES, "", &s) == 0);
+    CHECK(s.count == SCENARIO_MAX_LINES);
+    CHECK(s.lines[SCENARIO_MAX_LINES - 1].tick == SCENARIO_MAX_LINES - 1);
+    /* comments and blank lines take no room */
+    CHECK(load_data_lines(SCENARIO_MAX_LINES, "# a comment\n\n", &s) == 0);
+    /* one too many: the start line is line 1, so this is line 1002 */
+    CHECK(load_data_lines(SCENARIO_MAX_LINES + 1, "", &s) == 1002);
+}
+
 static void check_load_wrong_fields(void) {
     scenario_t s;
 
@@ -283,6 +375,9 @@ int main(void) {
     check_sensor_failed_read();
     check_load_comments_and_blanks();
     check_load_no_start_line();
+    check_load_start_range();
+    check_load_long_lines();
+    check_load_capacity();
     check_load_wrong_fields();
     check_load_ticks_must_increase();
     check_load_first_tick_is_zero();
