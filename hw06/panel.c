@@ -4,8 +4,6 @@
  * Edge detection on switch readings, and single-LED changes by
  * read-modify-write of LEDS_REG.
  */
-#include <stdint.h>
-
 #include "iom361_r4.h"
 #include "panel.h"
 
