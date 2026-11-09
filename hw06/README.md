@@ -6,14 +6,11 @@
 
 ### What is this?
 
-A second build of Homework 6, which replaced my first as the submission; the first
-is in this repo's history. This one grew outward from a "hello world" in `main.c`,
-and a module was only pulled out once the running program needed it.
-
-The program replays a scenario file into a trace, one line per tick, where a press
-of switch k toggles LED k. iom361 stands in for the hardware, so only `main.c` and
-the tests set the "world" with its `_iom361_set_...` functions. `sensor.c` and
-`panel.c` only read and write registers, the way they would on a real board.
+Homework 6 replays a scenario file into a trace, one line per tick, where a
+press of switch k toggles LED k. iom361 stands in for the hardware, so only
+`main.c` and the tests set the "world" with its `_iom361_set_...` functions.
+`sensor.c` and `panel.c` only read and write registers, the way they would on a
+real board.
 
 | File | What it's for |
 |------|---------------|
@@ -38,10 +35,10 @@ make clean  # removes build/
 ```
 
 It's all compiled with `gcc -std=c11 -Wall -Wextra`, with no warnings, and with
-`-fsanitize=address,undefined -fno-sanitize-recover=undefined`, so that undefined
-behavior fails the tests instead of only printing a report. The unit tests print
-`PASS` or `FAIL` per check, and `regress.sh` per scenario. Both exit nonzero on a
-failure.
+`-fsanitize=address,undefined -fno-sanitize-recover=undefined`, so that
+undefined behavior fails the tests instead of only printing a report. The unit
+tests print `PASS` or `FAIL` per check, and `regress.sh` per scenario. Both exit
+nonzero on a failure.
 
 ### Usage
 
@@ -49,8 +46,8 @@ failure.
 build/replay scenarios/toggle.txt
 ```
 
-Here are ticks 1 to 3 of that scenario. Switch 0 is pressed at tick 2 and held at
-tick 3, so only tick 2 counts as a press:
+Here are ticks 1 to 3 of that scenario. Switch 0 is pressed at tick 2 and held
+at tick 3, so only tick 2 counts as a press:
 
 ```
 2026-10-06 08:00:01 temp=21.5 rh=40.0 switches=0x0 pressed=0x0 leds=0x0
@@ -58,8 +55,8 @@ tick 3, so only tick 2 counts as a press:
 2026-10-06 08:00:03 temp=21.5 rh=40.0 switches=0x1 pressed=0x0 leds=0x1
 ```
 
-The time is in UTC, so a trace is the same on every computer. Errors go to stderr,
-with exit status 1:
+The time is in UTC, so a trace is the same on every computer. Errors go to
+stderr, with exit status 1:
 
 ```
 usage: replay scenario.txt
@@ -76,23 +73,23 @@ start 1791273600                # 2026-10-06 08:00:00 UTC
 2       21.5   40    0x1        # switch 0 pressed
 ```
 
-A file is a `start` line with a Unix timestamp from 0 to 253402300799 (the end of the
-year 9999), then one line per change, up to 1000 data lines of at most 255 characters
-each. The values hold until the next line. The first data line must be at tick
-0, and ticks must increase. Comments and blank lines are fine, and the switches are
-hex, with or without `0x`.
+A file is a `start` line with a Unix timestamp from 0 to 253402300799 (the end
+of the year 9999), then one line per change, up to 1000 data lines of at most
+255 characters each. The values hold until the next line. The first data line
+must be at tick 0, and ticks must increase. Comments and blank lines are fine,
+and the switches are hex, with or without `0x`.
 
-`scenario_load` returns 0, or the number of the first wrong line, counting every line
-in the file. A file with no data lines returns one past its last line.
+`scenario_load` returns 0, or the number of the first wrong line, counting every
+line in the file. A file with no data lines returns one past its last line.
 
 ### Where this differs from the assignment
 
 These are accepted deviations:
 
-- **The binary is `build/replay`,** not `./replay`, with everything else the build
-  produces.
-- **iom361 is in `external/`,** not directly in `hw06/`, to keep the code I was given
-  apart from the code I wrote.
+- **The binary is `build/replay`,** not `./replay`, with everything else the
+  build produces.
+- **iom361 is in `external/`,** not directly in `hw06/`, to keep the code I was
+  given apart from the code I wrote.
 
 ### Known gaps
 
@@ -106,7 +103,8 @@ These are accepted deviations:
 | A temperature or humidity out of range | iom361 clamps it, so `200` prints as `150.0`. |
 | `nan` or `inf` as a temperature or humidity | iom361 turns it into a reading, so a `nan` temperature prints as `-50.0`. |
 
-**Two rules have no test.** `sensor_read` must leave `*r` unchanged when either read
-fails, but iom361 can't be made to fail only the second read. `scenario_load` must
-fail on a read error partway through a file, but a temporary file can't be made to do
-that. In both cases the code guarantees it, and a test doesn't.
+**Two rules have no test.** `sensor_read` must leave `*r` unchanged when either
+read fails, but iom361 can't be made to fail only the second read.
+`scenario_load` must fail on a read error partway through a file, but a
+temporary file can't be made to do that. In both cases the code guarantees it,
+and a test doesn't.
