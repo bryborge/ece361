@@ -12,7 +12,7 @@
 #define RAW_RANGE 1048576.0  /* 2^20 */
 
 /**
- * Rounds to the nearest 0.1. lround returns an int, which has no negative
+ * Rounds to the nearest 0.1. lround returns a long, which has no negative
  * zero.
  */
 static float round_to_tenth(double value) {
