@@ -1,0 +1,2 @@
+balanced: 6 pairs, deepest 3
+exit 0
