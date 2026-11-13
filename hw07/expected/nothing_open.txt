@@ -1,0 +1,2 @@
+line 1, column 12: found ')', nothing open
+exit 1
