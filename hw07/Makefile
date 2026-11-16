@@ -1,31 +1,33 @@
 CC = gcc
 CFLAGS = -std=c11 -Wall -Wextra -g -I.
+BUILD = build
 
-all: balance
+all: $(BUILD)/balance
 
-balance: balance.o istack.o
+$(BUILD)/balance: $(BUILD)/balance.o $(BUILD)/istack.o
 	$(CC) $(CFLAGS) -o $@ $^
 
-tests/test_istack: tests/test_istack.o istack.o
+$(BUILD)/tests/test_istack: $(BUILD)/tests/test_istack.o $(BUILD)/istack.o
 	$(CC) $(CFLAGS) -o $@ $^
 
-test: tests/test_istack balance
-	./tests/test_istack
-	sh regress.sh
+test: $(BUILD)/tests/test_istack $(BUILD)/balance
+	./$(BUILD)/tests/test_istack
+	sh regress.sh $(BUILD)/balance
 
-# Starts from clean so that every object is rebuilt with the sanitizers. The
-# binaries stay sanitized until the next make clean.
-memcheck: clean
-	$(MAKE) CFLAGS="$(CFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined" test
+# Builds into a directory of its own, so that sanitized objects and plain ones
+# are never linked together.
+memcheck:
+	$(MAKE) BUILD=build/memcheck CFLAGS="$(CFLAGS) -fsanitize=address,undefined -fno-sanitize-recover=undefined" test
 
-%.o: %.c
+$(BUILD)/%.o: %.c
+	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-balance.o: balance.c istack.h
-istack.o: istack.c istack.h
-tests/test_istack.o: tests/test_istack.c istack.h
+$(BUILD)/balance.o: balance.c istack.h
+$(BUILD)/istack.o: istack.c istack.h
+$(BUILD)/tests/test_istack.o: tests/test_istack.c istack.h
 
 clean:
-	rm -f balance tests/test_istack *.o tests/*.o
+	rm -rf build
 
-.PHONY: all test memcheck clean
+.PHONY: all clean memcheck test
