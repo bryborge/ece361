@@ -5,6 +5,7 @@
  * nonzero if any check failed. Leaks are not checked here: make memcheck
  * runs these tests under AddressSanitizer, which reports them at exit.
  */
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -68,7 +69,7 @@ static void check_last_in_first_out(void) {
 static void check_ninth_push_doubles(void) {
     istack_t *s = istack_create();
     int v = 0;
-    int kept = 1;
+    bool kept = true;
 
     for (int i = 0; i < 8; i++) CHECK(istack_push(s, i * 10) == 0);
     CHECK(istack_count(s) == 8);
@@ -77,7 +78,7 @@ static void check_ninth_push_doubles(void) {
     CHECK(istack_count(s) == 9);
     CHECK(istack_capacity(s) == 16);
     for (int i = 8; i >= 0; i--) {
-        if (istack_pop(s, &v) != 0 || v != i * 10) kept = 0;
+        if (istack_pop(s, &v) != 0 || v != i * 10) kept = false;
     }
     CHECK(kept);
     CHECK(istack_is_empty(s));
@@ -87,17 +88,17 @@ static void check_ninth_push_doubles(void) {
 static void check_1000_pushes_and_pops(void) {
     istack_t *s = istack_create();
     int v = 0;
-    int pushed = 1;
-    int popped = 1;
+    bool pushed = true;
+    bool popped = true;
 
     for (int i = 0; i < 1000; i++) {
-        if (istack_push(s, i) != 0) pushed = 0;
+        if (istack_push(s, i) != 0) pushed = false;
     }
     CHECK(pushed);
     CHECK(istack_count(s) == 1000);
     CHECK(istack_capacity(s) == 1024);    /* 8, 16, ..., 1024 */
     for (int i = 999; i >= 0; i--) {
-        if (istack_pop(s, &v) != 0 || v != i) popped = 0;
+        if (istack_pop(s, &v) != 0 || v != i) popped = false;
     }
     CHECK(popped);
     CHECK(istack_is_empty(s));
@@ -115,9 +116,9 @@ static void check_to_array(void) {
     CHECK(a != NULL);
     CHECK(n == 10);
     if (a != NULL && n == 10) {
-        int bottom_first = 1;
+        bool bottom_first = true;
         for (int i = 0; i < 10; i++) {
-            if (a[i] != i + 1) bottom_first = 0;
+            if (a[i] != i + 1) bottom_first = false;
         }
         CHECK(bottom_first);
 

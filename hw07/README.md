@@ -17,7 +17,7 @@ and uses the stack to check that its brackets match.
 | `balance.c` | The bracket checker. |
 | `tests/test_istack.c` | Unit tests for `istack.c`. |
 | `inputs/`, `expected/` | Seven inputs for `balance`, and the output and exit status each should give, written by hand. |
-| `regress.sh` | Runs `./balance` on each input and diffs the result with its expected file. |
+| `regress.sh` | Runs `build/balance` on each input and diffs the result with its expected file. |
 | `AI_USAGE.md` | Which AI tools I used, for what, and what they got wrong. |
 
 ### Build and test
@@ -25,24 +25,18 @@ and uses the stack to check that its brackets match.
 Run these from `hw07/`:
 
 ```sh
-make           # builds ./balance
+make           # builds build/balance
 make test      # builds (if needed), then runs the unit tests and regress.sh
-make memcheck  # rebuilds everything with the sanitizers, then runs make test
-make clean     # removes everything the build made
+make memcheck  # builds with the sanitizers into build/memcheck/, then tests that
+make clean     # removes build/
 ```
 
 Everything is compiled with `gcc -std=c11 -Wall -Wextra`, with no warnings.
 `make memcheck` adds `-fsanitize=address,undefined
 -fno-sanitize-recover=undefined`, so a memory error, a leak or undefined
-behavior fails the tests instead of only printing a report. It starts with
-`make clean`, so that every object is rebuilt with the sanitizers, and the
-binaries stay sanitized until the next `make clean`.
-
-AddressSanitizer finds leaks on Linux only. On macOS, find them with:
-
-```sh
-leaks --atExit -- ./tests/test_istack
-```
+behavior fails the tests instead of only printing a report. It builds into
+`build/memcheck/`, apart from the plain build, so that sanitized objects and
+plain ones are never linked together.
 
 The unit tests print `PASS` or `FAIL` per check, and `regress.sh` per input.
 Both exit nonzero on a failure.
@@ -50,7 +44,7 @@ Both exit nonzero on a failure.
 ### Usage
 
 ```sh
-./balance < inputs/balanced.txt
+build/balance < inputs/balanced.txt
 ```
 
 It reads standard input one byte at a time, pushes each `(`, `[`, `{` and pops
@@ -72,7 +66,6 @@ When `balance` itself fails, it says so in one line on stderr and exits with
 status 2, so that 1 always means "not balanced":
 
 ```
-usage: balance < file
 balance: out of memory
 balance: read error
 ```
@@ -91,6 +84,13 @@ its exit status, so that one diff checks both.
 | `nothing_open.txt` | A closer with nothing open. |
 | `still_open.txt` | Two brackets still open at the end, across two lines. |
 | `empty.txt` | An empty file is balanced: 0 pairs, deepest 0. |
+
+### Where this differs from the assignment
+
+This is an accepted deviation:
+
+- **The binary is `build/balance`,** not `./balance`, with everything else the
+  build produces. The test binary is `build/tests/test_istack`.
 
 ### Part 4: Breaking it on purpose
 
@@ -119,7 +119,7 @@ free itself would have happened.
 
 `istack_destroy` freed the struct, but the caller's `s` still held its address,
 so `istack_push` read `s->count` (offset 8 of the freed 24-byte struct,
-`istack.c:57`) through a dangling pointer.
+`istack.c:56`) through a dangling pointer.
 
 **(3) Leaving out `istack_destroy` in `balance.c`.** The one call, in `main`.
 
