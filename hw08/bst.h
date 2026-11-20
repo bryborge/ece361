@@ -27,7 +27,7 @@ void bst_destroy(bst_t *t);
 /**
  * Adds key as a new node. At each node on the way down, a smaller key goes
  * left and any other goes right (including duplicates). If t is NULL or
- * or memory allocation fails, the tree is left unchanged.
+ * memory allocation fails, the tree is left unchanged.
  *
  * @return 0 on success, otherwise -1.
  */
