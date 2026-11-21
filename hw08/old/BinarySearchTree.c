@@ -1,3 +1,6 @@
+/**
+ * TutorialPoint's Code (bug included).
+ */
 #include <stdio.h>
 #include <stdlib.h>
 

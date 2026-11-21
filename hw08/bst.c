@@ -3,7 +3,7 @@
  *
  * A binary search tree of ints, ported from TutorialsPoint's
  * BinarySearchTree.c. The original keeps one global tree; here each tree is a
- * bst_t, and the node struct keeps the original's names.
+ * bst_t.
  */
 #include <stdlib.h>
 
@@ -31,7 +31,7 @@ bst_t *bst_create(void) {
 }
 
 /*
- * New: the original never frees. Frees both subtrees before the node itself,
+ * New: The original never frees. Frees both subtrees before the node itself,
  * since their pointers live inside it. n must not be NULL.
  */
 static void free_subtree(struct node *n) {
@@ -50,9 +50,23 @@ void bst_destroy(bst_t *t) {
 }
 
 /*
- * From the original's insert. Allocation is checked before the tree is
- * touched, so a failure leaves it unchanged.
+ * From the original's insert, with its loop replaced by recursion. Places
+ * tempNode in the subtree rooted at n, and returns that subtree's root:
+ * tempNode itself if the subtree was empty, otherwise n.
  */
+static struct node *insert_subtree(struct node *n, struct node *tempNode) {
+    if (n == NULL) return tempNode;
+
+    if (tempNode->data < n->data) {
+        n->left = insert_subtree(n->left, tempNode);
+    } else {
+        n->right = insert_subtree(n->right, tempNode);
+    }
+
+    return n;
+}
+
+/* From the original's insert. */
 int bst_insert(bst_t *t, int key) {
     if (t == NULL) return -1;
 
@@ -62,34 +76,12 @@ int bst_insert(bst_t *t, int key) {
     tempNode->left = NULL;
     tempNode->right = NULL;
 
-    if (t->root == NULL) {
-        t->root = tempNode;
-        return 0;
-    }
+    t->root = insert_subtree(t->root, tempNode);
 
-    struct node *current = t->root;
-    struct node *parent;
-
-    while (1) {
-        parent = current;
-
-        if (key < parent->data) {
-            current = current->left;
-            if (current == NULL) {
-                parent->left = tempNode;
-                return 0;
-            }
-        } else {
-            current = current->right;
-            if (current == NULL) {
-                parent->right = tempNode;
-                return 0;
-            }
-        }
-    }
+    return 0;
 }
 
-/* New: the original has no size. An empty subtree holds no keys. */
+/* New: the original has no size. */
 static size_t size_subtree(const struct node *n) {
     if (n == NULL) return 0;
 
@@ -103,7 +95,7 @@ size_t bst_size(const bst_t *t) {
     return size_subtree(t->root);
 }
 
-/* New: the original has no height. An empty subtree has height 0. */
+/* New: the original has no height. */
 static size_t height_subtree(const struct node *n) {
     if (n == NULL) return 0;
 
@@ -121,15 +113,16 @@ size_t bst_height(const bst_t *t) {
 }
 
 /*
- * From the original's search, ported faithfully, loop and all, but without
- * the printing (and the NULL check that only guarded a printf). A visit is
- * one node whose data is compared with key: one per pass through the loop,
- * plus the node that ends it by matching.
+ * From the original's search, without the printing (and the NULL check that
+ * only guarded a printf).
+ *
+ * Fixed: the original read root->data before checking root for NULL, so
+ *        searching an empty tree crashed.
  */
 bool bst_contains(const bst_t *t, int key, size_t *visits) {
     size_t count = 0;
 
-    if (t == NULL) {
+    if (t == NULL || t->root == NULL) {
         if (visits != NULL) *visits = 0;
         return false;
     }
