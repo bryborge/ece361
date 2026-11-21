@@ -148,3 +148,42 @@ bool bst_contains(const bst_t *t, int key, size_t *visits) {
     if (visits != NULL) *visits = count;
     return true;
 }
+
+/*
+ * Removes the first node holding key that a search from n reaches, and
+ * returns the subtree's new root. key must be in the subtree.
+ */
+static struct node *remove_subtree(struct node *n, int key) {
+    if (key < n->data) {
+        n->left = remove_subtree(n->left, key);
+        return n;
+    }
+    if (key > n->data) {
+        n->right = remove_subtree(n->right, key);
+        return n;
+    }
+
+    /* Two children: take the smallest key on the right, then remove its node. */
+    if (n->left != NULL && n->right != NULL) {
+        struct node *min = n->right;
+        while (min->left != NULL) min = min->left;
+
+        n->data = min->data;
+        n->right = remove_subtree(n->right, n->data);
+        return n;
+    }
+
+    /* No children, or one: the child, if any, takes n's place. */
+    struct node *child = (n->left != NULL) ? n->left : n->right;
+    free(n);
+
+    return child;
+}
+
+/* New: the original has no remove. */
+int bst_remove(bst_t *t, int key) {
+    if (!bst_contains(t, key, NULL)) return -1;
+    t->root = remove_subtree(t->root, key);
+
+    return 0;
+}
