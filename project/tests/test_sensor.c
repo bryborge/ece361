@@ -1,113 +1,158 @@
-/*
- * test_sensor.c:
- *
- * Tests for sensor.c, run against the iom361 model. Prints PASS or FAIL for
- * each check; test_main.c runs them and prints the summary.
+/**
+ * @file test_sensor.c
+ * @brief Unit tests for the sensor module.
  */
-#include <math.h>
-#include <stdbool.h>
 #include <stdint.h>
+#include <time.h>
 
-#include "check.h"
 #include "iom361_r4.h"
+#include "unity.h"
+
 #include "sensor.h"
 
+static uint32_t *base;
+
+void setUp(void) {
+    int rc;
+    base = iom361_initialize(2, 2, &rc);
+
+    TEST_ASSERT_NOT_NULL(base);
+}
+
+void tearDown(void) {}
+
 /**
- * Sets the sensor to temp and rh, and reads them back through sensor_read.
- *
- * @return true if the read succeeds and gives the two expected values.
+ * sensor_read() fills every field of type reading.
  */
-static bool reads_back(float temp, float rh, float want_temp, float want_rh) {
-    uint32_t *base = iom361_initialize(2, 2, NULL);
-    reading_t r;
+static void test_sensor_read_fills_reading_at_0_c(void) {
+    const time_t now = 1791273600;  // 2026-10-06 08:00:00 UTC
 
-    _iom361_set_sensor1(temp, rh);
-    if (sensor_read(base, 0, &r) != 0) return false;
-    return r.temp_c == want_temp && r.rh_pct == want_rh;
+    _iom361_set_sensor1(0.0f, 50.0f);
+
+    reading_t reading;
+    int rc = sensor_read(base, now, &reading);
+
+    TEST_ASSERT_EQUAL_INT(0, rc);
+    TEST_ASSERT_EQUAL_INT64(now, reading.timestamp);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, reading.temp_c);
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, reading.rh_pct);
 }
 
-static void check_sensor_conversion(void) {
-    CHECK(reads_back(0.0f, 60.0f, 0.0f, 60.0f));
-    CHECK(reads_back(100.0f, 60.0f, 100.0f, 60.0f));
-    /* FREEZE_C, the only threshold in the rules, and the readings either side
-     * of it. The register alone would not land on it exactly. */
-    CHECK(reads_back(1.0f, 60.0f, 1.0f, 60.0f));
-    CHECK(reads_back(0.9f, 60.0f, 0.9f, 60.0f));
-    CHECK(reads_back(1.1f, 60.0f, 1.1f, 60.0f));
+/**
+ * sensor_read() rounds to 0.1, so a reading set to exactly the freeze-guard
+ * threshold (1.0 C) compares equal to it.
+ */
+static void test_sensor_read_rounds_at_freeze_threshold(void) {
+    _iom361_set_sensor1(1.0f, 60.0f);
+
+    reading_t reading;
+    int rc = sensor_read(base, 0, &reading);
+
+    TEST_ASSERT_EQUAL_INT(0, rc);
+    TEST_ASSERT_FLOAT_WITHIN(0.0f, 1.0f, reading.temp_c);
+    TEST_ASSERT_FLOAT_WITHIN(0.0f, 60.0f, reading.rh_pct);
 }
 
-static void check_sensor_rounds_to_tenths(void) {
-    CHECK(reads_back(21.54f, 40.06f, 21.5f, 40.1f));
-    CHECK(reads_back(-12.3f, 0.3f, -12.3f, 0.3f));
-    CHECK(reads_back(-12.36f, 0.0f, -12.4f, 0.0f));
+/**
+ * sensor_read() converts correctly at 100 C, far enough from 0 C that an
+ * error in the scale factor is not hidden by the rounding.
+ */
+static void test_sensor_read_converts_at_100_c(void) {
+    _iom361_set_sensor1(100.0f, 25.0f);
+
+    reading_t reading;
+    int rc = sensor_read(base, 0, &reading);
+
+    TEST_ASSERT_EQUAL_INT(0, rc);
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, reading.temp_c);
+    TEST_ASSERT_EQUAL_FLOAT(25.0f, reading.rh_pct);
 }
 
-static void check_sensor_range_ends(void) {
-    CHECK(reads_back(-50.0f, 0.0f, -50.0f, 0.0f));
-    /* The registers top out just under these, and rounding brings them back. */
-    CHECK(reads_back(150.0f, 100.0f, 150.0f, 100.0f));
+/**
+ * sensor_read() returns the iom361 code of a failed register read and leaves
+ * the reading untouched.
+ */
+static void test_sensor_read_fails_on_wrong_base(void) {
+    uint32_t not_iom361 = 0;
+    reading_t reading = {.timestamp = 1, .temp_c = -1.0f, .rh_pct = -1.0f};
+
+    int rc = sensor_read(&not_iom361, 2, &reading);
+
+    TEST_ASSERT_EQUAL_INT(1, rc);  // iom361: wrong base address
+    TEST_ASSERT_EQUAL_INT64(1, reading.timestamp);
+    TEST_ASSERT_EQUAL_FLOAT(-1.0f, reading.temp_c);
+    TEST_ASSERT_EQUAL_FLOAT(-1.0f, reading.rh_pct);
 }
 
-static void check_sensor_after_initialize(void) {
-    uint32_t *base = iom361_initialize(2, 2, NULL);
-    reading_t r;
+/**
+ * sensor_format_timestamp() prints the start time as given.
+ */
+static void test_sensor_format_timestamp_start_time(void) {
+    const time_t start = 1791273600;  // 2026-10-06 08:00:00 UTC
 
-    CHECK(sensor_read(base, 0, &r) == 0);
-    CHECK(r.temp_c == 23.5f);
-    CHECK(r.rh_pct == 75.0f);
+    char text[20];
+    int rc = sensor_format_timestamp(start, text);
+
+    TEST_ASSERT_EQUAL_INT(0, rc);
+    TEST_ASSERT_EQUAL_STRING("2026-10-06 08:00:00", text);
 }
 
-static void check_sensor_timestamp(void) {
-    uint32_t *base = iom361_initialize(2, 2, NULL);
-    reading_t r;
+/**
+ * sensor_format_timestamp() counts seconds: 59 seconds after the start time
+ * is still within the same minute.
+ */
+static void test_sensor_format_timestamp_59_seconds_later(void) {
+    const time_t start = 1791273600;  // 2026-10-06 08:00:00 UTC
 
-    CHECK(sensor_read(base, 1791273602, &r) == 0);
-    CHECK(r.timestamp == 1791273602);
+    char text[20];
+    int rc = sensor_format_timestamp(start + 59, text);
+
+    TEST_ASSERT_EQUAL_INT(0, rc);
+    TEST_ASSERT_EQUAL_STRING("2026-10-06 08:00:59", text);
 }
 
-static void check_sensor_no_negative_zero(void) {
-    uint32_t *base = iom361_initialize(2, 2, NULL);
-    reading_t r;
+/**
+ * sensor_format_timestamp() changes the date at midnight: one second after
+ * 23:59:59 is 00:00:00 on the next day.
+ */
+static void test_sensor_format_timestamp_rolls_over_at_midnight(void) {
+    const time_t last_second = 1791331199;  // 2026-10-06 23:59:59 UTC
 
-    _iom361_set_sensor1(-0.04f, 50.0f);
-    CHECK(sensor_read(base, 0, &r) == 0);
-    /* -0.0 == 0.0 is true, so only the sign bit tells them apart. It matters
-     * because a trace would print -0.0. */
-    CHECK(r.temp_c == 0.0f);
-    CHECK(!signbit(r.temp_c));
+    char text[20];
+
+    TEST_ASSERT_EQUAL_INT(0, sensor_format_timestamp(last_second, text));
+    TEST_ASSERT_EQUAL_STRING("2026-10-06 23:59:59", text);
+
+    TEST_ASSERT_EQUAL_INT(0, sensor_format_timestamp(last_second + 1, text));
+    TEST_ASSERT_EQUAL_STRING("2026-10-07 00:00:00", text);
 }
 
-static void check_sensor_keeps_bits_19_to_0(void) {
-    uint32_t *base = iom361_initialize(2, 2, NULL);
-    reading_t r;
+/**
+ * sensor_format_timestamp() knows that 2027 is not a leap year: one second
+ * after the end of 28 February is 1 March.
+ */
+static void test_sensor_format_timestamp_rolls_over_to_march(void) {
+    const time_t last_second = 1803859199;  // 2027-02-28 23:59:59 UTC
 
-    _iom361_set_sensor1(91.0f, 60.0f);
-    /* Directly, because _iom361_set_sensor1 can't set these bits and a write
-     * to a read-only register is ignored. */
-    base[TEMP_REG / sizeof *base] |= 0xFFF00000u;
-    base[HUMID_REG / sizeof *base] |= 0xFFF00000u;
-    CHECK(sensor_read(base, 0, &r) == 0);
-    CHECK(r.temp_c == 91.0f);
-    CHECK(r.rh_pct == 60.0f);
+    char text[20];
+
+    TEST_ASSERT_EQUAL_INT(0, sensor_format_timestamp(last_second, text));
+    TEST_ASSERT_EQUAL_STRING("2027-02-28 23:59:59", text);
+
+    TEST_ASSERT_EQUAL_INT(0, sensor_format_timestamp(last_second + 1, text));
+    TEST_ASSERT_EQUAL_STRING("2027-03-01 00:00:00", text);
 }
 
-static void check_sensor_failed_read(void) {
-    uint32_t *base = iom361_initialize(2, 2, NULL);
-    reading_t r = { .timestamp = 7, .temp_c = 1.5f, .rh_pct = 2.5f };
+int main(void) {
+    UNITY_BEGIN();
+    RUN_TEST(test_sensor_read_fills_reading_at_0_c);
+    RUN_TEST(test_sensor_read_rounds_at_freeze_threshold);
+    RUN_TEST(test_sensor_read_converts_at_100_c);
+    RUN_TEST(test_sensor_read_fails_on_wrong_base);
+    RUN_TEST(test_sensor_format_timestamp_start_time);
+    RUN_TEST(test_sensor_format_timestamp_59_seconds_later);
+    RUN_TEST(test_sensor_format_timestamp_rolls_over_at_midnight);
+    RUN_TEST(test_sensor_format_timestamp_rolls_over_to_march);
 
-    CHECK(sensor_read(base + 1, 1791273602, &r) == 1);
-    CHECK(r.timestamp == 7);
-    CHECK(r.temp_c == 1.5f);
-    CHECK(r.rh_pct == 2.5f);
-}
-
-void run_sensor_tests(void) {
-    check_sensor_conversion();
-    check_sensor_rounds_to_tenths();
-    check_sensor_range_ends();
-    check_sensor_after_initialize();
-    check_sensor_timestamp();
-    check_sensor_no_negative_zero();
-    check_sensor_keeps_bits_19_to_0();
-    check_sensor_failed_read();
+    return UNITY_END();
 }

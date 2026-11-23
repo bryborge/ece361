@@ -1,0 +1,12 @@
+# Freeze guard: while it is freezing and the door is closed, a press is
+# refused. Once it warms up, the guard clears and the same press opens the
+# door.
+start 1791273600                # 2026-10-06 08:00:00 UTC
+# tick  temp   rh    switches
+0       -5.0   60    0x0      # freezing, door closed
+3       -5.0   60    0x1      # REMOTE pressed: refused
+4       -5.0   60    0x0      # and released
+8       2.0    60    0x0      # it warms up
+10      2.0    60    0x1      # REMOTE pressed: the door opens
+11      2.0    60    0x0      # and released
+26      2.0    60    0x0

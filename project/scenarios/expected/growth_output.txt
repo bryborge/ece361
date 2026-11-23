@@ -1,0 +1,47 @@
+2026-10-06 08:00:00 state=CLOSED temp=-5.0 rh=60.0 leds=0x0 status=0x00000040
+2026-10-06 08:00:01 state=CLOSED temp=-5.0 rh=60.0 leds=0x0 status=0x00000040
+2026-10-06 08:00:02 state=CLOSED temp=-5.0 rh=60.0 leds=0x0 status=0x00000040
+2026-10-06 08:00:03 state=CLOSED temp=-5.0 rh=60.0 leds=0x0 status=0x00000040
+2026-10-06 08:00:04 state=CLOSED temp=-5.0 rh=60.0 leds=0x0 status=0x00000040
+2026-10-06 08:00:05 state=CLOSED temp=-5.0 rh=60.0 leds=0x0 status=0x00000040
+2026-10-06 08:00:06 state=CLOSED temp=-5.0 rh=60.0 leds=0x0 status=0x00000040
+2026-10-06 08:00:07 state=CLOSED temp=-5.0 rh=60.0 leds=0x0 status=0x00000040
+2026-10-06 08:00:08 state=CLOSED temp=15.0 rh=60.0 leds=0x0 status=0x00000000
+2026-10-06 08:00:09 state=CLOSED temp=15.0 rh=60.0 leds=0x0 status=0x00000000
+2026-10-06 08:00:10 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:11 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:12 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:13 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:14 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:15 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:16 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:17 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:18 state=CLOSING temp=15.0 rh=60.0 leds=0x2 status=0x00000023
+2026-10-06 08:00:19 state=CLOSING temp=15.0 rh=60.0 leds=0x2 status=0x00000023
+2026-10-06 08:00:20 state=CLOSING temp=15.0 rh=60.0 leds=0x2 status=0x00000023
+2026-10-06 08:00:21 state=OBSTRUCTED temp=15.0 rh=60.0 leds=0x0 status=0x00000004
+  history tick=21 event=OBSTRUCTION
+  history tick=18 event=PRESS
+  history tick=10 event=PRESS
+2026-10-06 08:00:22 state=OBSTRUCTED temp=15.0 rh=60.0 leds=0x0 status=0x00000004
+2026-10-06 08:00:23 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:24 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:25 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:26 state=CLOSING temp=15.0 rh=60.0 leds=0x2 status=0x00000023
+2026-10-06 08:00:27 state=CLOSING temp=15.0 rh=60.0 leds=0x2 status=0x00000023
+2026-10-06 08:00:28 state=CLOSING temp=15.0 rh=60.0 leds=0x2 status=0x00000023
+2026-10-06 08:00:29 state=OBSTRUCTED temp=15.0 rh=60.0 leds=0x0 status=0x00000004
+  history tick=29 event=OBSTRUCTION
+  history tick=26 event=PRESS
+  history tick=22 event=PRESS
+2026-10-06 08:00:30 state=OBSTRUCTED temp=15.0 rh=60.0 leds=0x0 status=0x00000004
+2026-10-06 08:00:31 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:32 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:33 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:34 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:35 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:36 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:37 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:38 state=OPENING temp=15.0 rh=60.0 leds=0x1 status=0x00000011
+2026-10-06 08:00:39 state=OPEN temp=15.0 rh=60.0 leds=0x0 status=0x00000002
+2026-10-06 08:00:40 state=OPEN temp=15.0 rh=60.0 leds=0x0 status=0x00000002

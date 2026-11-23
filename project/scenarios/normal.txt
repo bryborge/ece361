@@ -1,0 +1,9 @@
+# Normal operation: REMOTE opens the door, it stays open, and REMOTE closes it.
+start 1791273600                # 2026-10-06 08:00:00 UTC
+# tick  temp   rh    switches
+0       15.0   60    0x0
+2       15.0   60    0x1      # REMOTE pressed
+3       15.0   60    0x0      # and released
+20      15.0   60    0x1      # REMOTE pressed
+21      15.0   60    0x0      # and released
+37      15.0   60    0x0

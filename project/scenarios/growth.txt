@@ -1,0 +1,24 @@
+# Growth: more history entries than the starting room of 8, so the stack
+# grows. The second obstruction is the 10th entry, so its printout shows
+# entries 10, 9, and 8: the 9th made the stack grow, and the 8th was the last
+# to fit in the starting room.
+start 1791273600                # 2026-10-06 08:00:00 UTC
+# tick  temp   rh    switches
+0       -5.0   60    0x0      # freezing, door closed
+2       -5.0   60    0x1      # REMOTE pressed: refused (entries 1 and 2)
+3       -5.0   60    0x0      # and released
+5       -5.0   60    0x1      # REMOTE pressed: refused (entries 3 and 4)
+6       -5.0   60    0x0      # and released
+8       15.0   60    0x0      # it warms up
+10      15.0   60    0x1      # REMOTE pressed: the door opens (entry 5)
+11      15.0   60    0x0      # and released
+18      15.0   60    0x1      # REMOTE pressed: the door closes (entry 6)
+19      15.0   60    0x0      # and released
+21      15.0   60    0x2      # LIGHT_BARRIER blocked: OBSTRUCTED (entry 7)
+22      15.0   60    0x1      # cleared, and REMOTE pressed: ignored (entry 8)
+23      15.0   60    0x0      # and released; the pause ends and the door opens
+26      15.0   60    0x1      # REMOTE pressed: the door closes (entry 9)
+27      15.0   60    0x0      # and released
+29      15.0   60    0x2      # LIGHT_BARRIER blocked: OBSTRUCTED (entry 10)
+30      15.0   60    0x0      # and cleared
+40      15.0   60    0x0      # the pause ended at 31; the door is open at 39

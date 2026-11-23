@@ -1,0 +1,15 @@
+# Thresholds: the freeze guard's threshold of 1.0 C, set to exactly its value
+# and to 0.1 C on either side. A press is refused at 0.9 C and at 1.0 C, and
+# opens the door at 1.1 C.
+start 1791273600                # 2026-10-06 08:00:00 UTC
+# tick  temp   rh    switches
+0       0.9    60    0x0      # below the threshold
+2       0.9    60    0x1      # REMOTE pressed: refused
+3       0.9    60    0x0      # and released
+5       1.0    60    0x0      # exactly the threshold
+7       1.0    60    0x1      # REMOTE pressed: refused
+8       1.0    60    0x0      # and released
+10      1.1    60    0x0      # above the threshold
+12      1.1    60    0x1      # REMOTE pressed: the door opens
+13      1.1    60    0x0      # and released
+28      1.1    60    0x0

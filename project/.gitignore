@@ -1,0 +1,4 @@
+build/
+subprojects/*/
+subprojects/packagecache/
+!subprojects/iom361_r4/

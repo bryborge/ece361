@@ -1,0 +1,24 @@
+# Unexpected input: each switch changes at least once in every state. The
+# light barrier is ignored unless the door is closing. A press reverses a
+# moving door and is ignored while the door is obstructed.
+start 1791273600                # 2026-10-06 08:00:00 UTC
+# tick  temp   rh    switches
+0       15.0   60    0x0      # CLOSED
+1       15.0   60    0x2      # LIGHT_BARRIER blocked: ignored
+2       15.0   60    0x0      # and cleared
+3       15.0   60    0x1      # REMOTE pressed: the door opens
+4       15.0   60    0x0      # and released, while OPENING
+5       15.0   60    0x2      # LIGHT_BARRIER blocked: ignored
+6       15.0   60    0x0      # and cleared
+7       15.0   60    0x1      # REMOTE pressed: the door reverses to CLOSING
+8       15.0   60    0x0      # and released, while CLOSING
+9       15.0   60    0x1      # REMOTE pressed: the door reverses to OPENING
+10      15.0   60    0x0      # and released; the door opens fully
+23      15.0   60    0x2      # LIGHT_BARRIER blocked while OPEN: ignored
+24      15.0   60    0x0      # and cleared
+25      15.0   60    0x1      # REMOTE pressed: the door closes
+26      15.0   60    0x0      # and released
+28      15.0   60    0x2      # LIGHT_BARRIER blocked while CLOSING: OBSTRUCTED
+29      15.0   60    0x1      # cleared, and REMOTE pressed: ignored
+30      15.0   60    0x0      # and released; the pause ends and the door opens
+34      15.0   60    0x0
