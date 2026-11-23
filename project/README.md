@@ -4,77 +4,37 @@ This is the final project for ECE361 - Computer System Organization at Portland 
 
 ## Assignment and Specification
 
-The project assignment details are captured in the assignment document found in [docs/ASSIGNMENT.md](docs/ASSIGNMENT.md).
+The project assignment details are captured in the assignment document found in [ASSIGNMENT.md](ASSIGNMENT.md).
 
-The project spec can be found in [docs/SPEC.md](docs/SPEC.md).
+The project spec can be found in [SPEC.md](SPEC.md).
 
 ## Getting Started
 
-This project is built with [Meson](https://mesonbuild.com/). It builds the `garage_opener` program and test suite.
-
 ### Requirements
 
-- A C11 compiler
-- Meson 1.7 or later
-- Ninja
+- gcc, with C11 support
+- make
 
-### Installing
-
-```sh
-meson setup build
-meson compile -C build
-```
-
-The program executable is in `build/garage_opener`. It replays a scenario file, for example:
+### Building
 
 ```sh
-./build/garage_opener scenarios/normal.txt
+make
 ```
+
+The program executable is in `build/garage`. It replays a scenario file, for example:
+
+```sh
+./build/garage scenarios/1_normal.txt
+```
+
+`make clean` removes everything that was built.
 
 ### Testing
 
-The [Unity](https://github.com/ThrowTheSwitch/Unity) test framework is used by Meson under the hood.
-
 ```sh
-meson test -C build
+make test
 ```
 
-For verbose test output, run the above command with `-v`.
+This builds and runs every unit test and scenario test, printing PASS or FAIL for each check, and ends with one line giving the number that passed and failed. Everything is built with AddressSanitizer and UndefinedBehaviorSanitizer, so a leak or undefined behavior also fails the run.
 
-#### Test Coverage
-
-> [!IMPORTANT]
->
-> Coverage counters accumulate across runs, including runs of `garage_opener` itself. To reset them before a test run:
->
-> ```sh
-> ninja -C build clean-gcda
-> ```
-
-[gcovr](https://gcovr.com) is required for generating code coverage reports.
-
-1.  Enable coverage.
-
-    ```sh
-    meson configure build -Db_coverage=true
-    ```
-
-2.  Build everything.
-
-    ```sh
-    meson compile -C build
-    ```
-
-3.  Run test suite.
-
-    ```sh
-    meson test -C build
-    ```
-
-4.  Generate the coverage reports.
-
-    ```sh
-    ninja -C build coverage
-    ```
-
-Follow the terminal output and open the desired report (in `build/meson-logs/`).
+Each scenario test replays `scenarios/<name>.txt` and compares what the program prints with `scenarios/<name>.expected`.

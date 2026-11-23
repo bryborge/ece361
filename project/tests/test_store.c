@@ -1,48 +1,89 @@
-/**
- * @file test_store.c
- * @brief Unit tests for the record store module.
+/*
+ * test_store.c:
+ *
+ * Tests for store.c. Prints PASS or FAIL for each check; test_main.c runs
+ * them and prints the summary. Leaks are not checked here: the tests are
+ * built with AddressSanitizer, whose LeakSanitizer reports them at exit.
  */
-#include "unity.h"
+#include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <time.h>
 
+#include "check.h"
 #include "store.h"
 
-/*
- * Each test gets a new, empty store. tearDown destroys it, and Unity runs
- * tearDown even after a failed assertion, so a failing test does not leak.
+/**
+ * Starts each check with a new, empty store.
+ *
+ * @return The store, for the check to destroy.
  */
-static store_t *store;
+static store_t *start(void) {
+    store_t *store = store_create();
 
-void setUp(void) {
-    store = store_create();
-    TEST_ASSERT_NOT_NULL(store);
+    assert(store != NULL);
+    return store;
 }
 
-void tearDown(void) {
-    store_destroy(store);
-    store = NULL;
+/**
+ * Inserts record i for each i from first up to, but not including, last.
+ * Record i is at 15.0 + (i % 10) * 0.5 °C: 15.0, 15.5, ..., 19.5 °C, then
+ * around again.
+ *
+ * @return true if every insert succeeded.
+ */
+static bool insert_cycle(store_t *store, int first, int last) {
+    bool all_inserted = true;
+
+    for (int i = first; i < last; i++) {
+        const record_t record = {
+            .reading = { .temp_c = 15.0f + (float)(i % 10) * 0.5f },
+        };
+        all_inserted = store_insert(store, &record) == 0 && all_inserted;
+    }
+    return all_inserted;
+}
+
+/**
+ * Finds the records in the step that holds temp_c.
+ *
+ * @return true if there are 3 of them, with timestamps first, first + 3, and
+ *         first + 6, in that order.
+ */
+static bool finds_three_in_order(const store_t *store, float temp_c, time_t first) {
+    const record_t key = { .reading = { .temp_c = temp_c } };
+    const record_t *records;
+    size_t count;
+
+    if (store_find(store, &key, &records, &count) != 0) return false;
+    if (count != 3) return false;
+    for (size_t j = 0; j < 3; j++) {
+        if (records[j].reading.timestamp != first + 3 * (time_t)j) return false;
+    }
+    return true;
 }
 
 /**
  * Two temperatures in the same 0.5 °C step have the same key.
  */
-static void test_record_compare_same_step_is_equal(void) {
+static void check_record_compare_same_step_is_equal(void) {
     const record_t a = { .reading = { .temp_c = 21.2f } };
     const record_t b = { .reading = { .temp_c = 21.4f } };
 
-    TEST_ASSERT_EQUAL_INT(0, record_compare(&a, &b));
-    TEST_ASSERT_EQUAL_INT(0, record_compare(&b, &a));
+    CHECK(record_compare(&a, &b) == 0);
+    CHECK(record_compare(&b, &a) == 0);
 }
 
 /**
  * Two temperatures in neighboring steps are ordered by step, even when they
  * are only 0.1 °C apart.
  */
-static void test_record_compare_neighboring_steps_are_ordered(void) {
+static void check_record_compare_neighboring_steps_are_ordered(void) {
     const record_t lower = { .reading = { .temp_c = 21.4f } };
     const record_t upper = { .reading = { .temp_c = 21.5f } };
 
-    TEST_ASSERT_LESS_THAN_INT(0, record_compare(&lower, &upper));
-    TEST_ASSERT_GREATER_THAN_INT(0, record_compare(&upper, &lower));
+    CHECK(record_compare(&lower, &upper) < 0);
+    CHECK(record_compare(&upper, &lower) > 0);
 }
 
 /**
@@ -50,42 +91,44 @@ static void test_record_compare_neighboring_steps_are_ordered(void) {
  * boundary at 0.0 °C also checks that negative temperatures round down:
  * -0.1 °C is in the step from -0.5 °C, not the step from 0.0 °C.
  */
-static void test_record_compare_boundary_starts_the_step_above(void) {
+static void check_record_compare_boundary_starts_the_step_above(void) {
     const record_t below = { .reading = { .temp_c = -0.1f } };
     const record_t boundary = { .reading = { .temp_c = 0.0f } };
     const record_t inside = { .reading = { .temp_c = 0.4f } };
 
-    TEST_ASSERT_LESS_THAN_INT(0, record_compare(&below, &boundary));
-    TEST_ASSERT_EQUAL_INT(0, record_compare(&boundary, &inside));
+    CHECK(record_compare(&below, &boundary) < 0);
+    CHECK(record_compare(&boundary, &inside) == 0);
 }
 
 /**
  * A new store holds no records and has a height of 0.
  */
-static void test_store_create_starts_empty(void) {
-    TEST_ASSERT_EQUAL_size_t(0, store_count(store));
-    TEST_ASSERT_EQUAL_size_t(0, store_height(store));
+static void check_store_create_starts_empty(void) {
+    store_t *store = start();
+
+    CHECK(store_count(store) == 0);
+    CHECK(store_height(store) == 0);
+    store_destroy(store);
 }
 
 /**
- * Destroying an empty store frees it. LeakSanitizer fails the test at exit if
+ * Destroying an empty store frees it. LeakSanitizer fails the run at exit if
  * anything is left.
  */
-static void test_store_destroy_empty_store(void) {
-    store_destroy(store);
-
-    /* Already destroyed: tearDown's store_destroy(NULL) does nothing. */
-    store = NULL;
+static void check_store_destroy_empty_store(void) {
+    store_destroy(start());
 }
 
 /**
  * Inserting into an empty store adds one record.
  */
-static void test_store_insert_into_empty_store(void) {
+static void check_store_insert_into_empty_store(void) {
+    store_t *store = start();
     const record_t record = { .reading = { .temp_c = 21.2f } };
 
-    TEST_ASSERT_EQUAL_INT(0, store_insert(store, &record));
-    TEST_ASSERT_EQUAL_size_t(1, store_count(store));
+    CHECK(store_insert(store, &record) == 0);
+    CHECK(store_count(store) == 1);
+    store_destroy(store);
 }
 
 /**
@@ -94,41 +137,40 @@ static void test_store_insert_into_empty_store(void) {
  * records each, so every node's array grows past its starting room. The first
  * 10 arrive in increasing order, so the 10 nodes form a chain: height 10.
  */
-static void test_store_count_and_height_after_1_2_and_100_inserts(void) {
-    for (int i = 0; i < 100; i++) {
-        /* 15.0, 15.5, ..., 19.5 °C, then around again. */
-        const record_t record = {
-            .reading = { .temp_c = 15.0f + (float)(i % 10) * 0.5f },
-        };
-        TEST_ASSERT_EQUAL_INT(0, store_insert(store, &record));
+static void check_store_count_and_height_after_1_2_and_100_inserts(void) {
+    store_t *store = start();
 
-        if (i == 0) {
-            TEST_ASSERT_EQUAL_size_t(1, store_count(store));
-            TEST_ASSERT_EQUAL_size_t(1, store_height(store));
-        }
-        if (i == 1) {
-            TEST_ASSERT_EQUAL_size_t(2, store_count(store));
-            TEST_ASSERT_EQUAL_size_t(2, store_height(store));
-        }
-    }
+    CHECK(insert_cycle(store, 0, 1));
+    CHECK(store_count(store) == 1);
+    CHECK(store_height(store) == 1);
 
-    TEST_ASSERT_EQUAL_size_t(100, store_count(store));
-    TEST_ASSERT_EQUAL_size_t(10, store_height(store));
+    CHECK(insert_cycle(store, 1, 2));
+    CHECK(store_count(store) == 2);
+    CHECK(store_height(store) == 2);
+
+    CHECK(insert_cycle(store, 2, 100));
+    CHECK(store_count(store) == 100);
+    CHECK(store_height(store) == 10);
+    store_destroy(store);
 }
 
 /**
  * A long run at one temperature, the usual case in a replay, fills one node
  * and leaves the tree's height at 1.
  */
-static void test_store_one_temperature_stays_one_node_tall(void) {
+static void check_store_one_temperature_stays_one_node_tall(void) {
+    store_t *store = start();
     const record_t record = { .reading = { .temp_c = 15.0f } };
+    bool all_inserted = true;
 
     for (int i = 0; i < 100; i++) {
-        TEST_ASSERT_EQUAL_INT(0, store_insert(store, &record));
+        all_inserted = store_insert(store, &record) == 0 && all_inserted;
     }
 
-    TEST_ASSERT_EQUAL_size_t(100, store_count(store));
-    TEST_ASSERT_EQUAL_size_t(1, store_height(store));
+    CHECK(all_inserted);
+    CHECK(store_count(store) == 100);
+    CHECK(store_height(store) == 1);
+    store_destroy(store);
 }
 
 /**
@@ -137,8 +179,10 @@ static void test_store_one_temperature_stays_one_node_tall(void) {
  * 22.0, then 20.2, 21.2, 22.2, then 20.4, 21.4, 22.4 °C. Each record's
  * timestamp is its place in that order, 0 to 8.
  */
-static void test_store_find_gets_every_duplicate_in_order(void) {
+static void check_store_find_gets_every_duplicate_in_order(void) {
+    store_t *store = start();
     const float steps[] = { 20.0f, 21.0f, 22.0f };
+    bool all_inserted = true;
 
     for (int i = 0; i < 9; i++) {
         const record_t record = {
@@ -147,29 +191,23 @@ static void test_store_find_gets_every_duplicate_in_order(void) {
                 .temp_c = steps[i % 3] + (float)(i / 3) * 0.2f,
             },
         };
-        TEST_ASSERT_EQUAL_INT(0, store_insert(store, &record));
+        all_inserted = store_insert(store, &record) == 0 && all_inserted;
     }
+    CHECK(all_inserted);
 
-    for (int s = 0; s < 3; s++) {
-        /* Any temperature in the step finds its records. */
-        const record_t key = { .reading = { .temp_c = steps[s] + 0.3f } };
-        const record_t *records;
-        size_t count;
-
-        TEST_ASSERT_EQUAL_INT(0, store_find(store, &key, &records, &count));
-        TEST_ASSERT_EQUAL_size_t(3, count);
-
-        for (int j = 0; j < 3; j++) {
-            TEST_ASSERT_EQUAL_INT64(s + 3 * j, records[j].reading.timestamp);
-        }
-    }
+    /* Any temperature in the step finds its records. */
+    CHECK(finds_three_in_order(store, 20.3f, 0));
+    CHECK(finds_three_in_order(store, 21.3f, 1));
+    CHECK(finds_three_in_order(store, 22.3f, 2));
+    store_destroy(store);
 }
 
 /**
  * Finding a key that is not there fails and leaves the out-parameters as
  * they were: in an empty store, and on either side of a store's only key.
  */
-static void test_store_find_missing_key_fails(void) {
+static void check_store_find_missing_key_fails(void) {
+    store_t *store = start();
     const record_t below = { .reading = { .temp_c = 19.0f } };
     const record_t stored = { .reading = { .temp_c = 21.0f } };
     const record_t above = { .reading = { .temp_c = 23.0f } };
@@ -178,14 +216,15 @@ static void test_store_find_missing_key_fails(void) {
     const record_t *records = &untouched;
     size_t count = 42;
 
-    TEST_ASSERT_EQUAL_INT(1, store_find(store, &stored, &records, &count));
+    CHECK(store_find(store, &stored, &records, &count) == 1);
 
-    TEST_ASSERT_EQUAL_INT(0, store_insert(store, &stored));
-    TEST_ASSERT_EQUAL_INT(1, store_find(store, &below, &records, &count));
-    TEST_ASSERT_EQUAL_INT(1, store_find(store, &above, &records, &count));
+    CHECK(store_insert(store, &stored) == 0);
+    CHECK(store_find(store, &below, &records, &count) == 1);
+    CHECK(store_find(store, &above, &records, &count) == 1);
 
-    TEST_ASSERT_EQUAL_PTR(&untouched, records);
-    TEST_ASSERT_EQUAL_size_t(42, count);
+    CHECK(records == &untouched);
+    CHECK(count == 42);
+    store_destroy(store);
 }
 
 /* The records a walk visited, in the order it visited them. */
@@ -194,12 +233,14 @@ typedef struct {
     size_t count;
 } visited_t;
 
-/* A store_walk callback that copies each record into a visited_t. */
+/*
+ * A store_walk callback that copies each record into a visited_t. Records
+ * past the 16th are counted but not copied, so the count shows the overflow.
+ */
 static void collect(const record_t *record, void *context) {
     visited_t *visited = context;
 
-    TEST_ASSERT_TRUE(visited->count < 16);
-    visited->records[visited->count] = *record;
+    if (visited->count < 16) visited->records[visited->count] = *record;
     visited->count++;
 }
 
@@ -208,42 +249,45 @@ static void collect(const record_t *record, void *context) {
  * order they were inserted. The records go in out of order; each record's
  * timestamp is its place in the insertion order.
  */
-static void test_store_walk_visits_records_in_key_order(void) {
+static void check_store_walk_visits_records_in_key_order(void) {
+    store_t *store = start();
     const float temps[] = { 22.0f, 20.0f, 21.0f, 20.2f, 23.0f, 21.4f, 20.4f };
+    bool all_inserted = true;
 
     for (int i = 0; i < 7; i++) {
         const record_t record = {
             .reading = { .timestamp = i, .temp_c = temps[i] },
         };
-        TEST_ASSERT_EQUAL_INT(0, store_insert(store, &record));
+        all_inserted = store_insert(store, &record) == 0 && all_inserted;
     }
+    CHECK(all_inserted);
 
     visited_t visited = { .count = 0 };
     store_walk(store, collect, &visited);
 
     /* 20.0, 20.2, 20.4, then 21.0, 21.4, then 22.0, then 23.0 °C. */
-    const int expected[] = { 1, 3, 6, 2, 5, 0, 4 };
+    const time_t expected[] = { 1, 3, 6, 2, 5, 0, 4 };
+    bool in_key_order = visited.count == 7;
 
-    TEST_ASSERT_EQUAL_size_t(7, visited.count);
-    for (size_t i = 0; i < 7; i++) {
-        TEST_ASSERT_EQUAL_INT64(
-            expected[i], visited.records[i].reading.timestamp);
+    for (size_t i = 0; in_key_order && i < 7; i++) {
+        in_key_order = visited.records[i].reading.timestamp == expected[i];
     }
+
+    CHECK(visited.count == 7);
+    CHECK(in_key_order);
+    store_destroy(store);
 }
 
-int main(void) {
-    UNITY_BEGIN();
-    RUN_TEST(test_record_compare_same_step_is_equal);
-    RUN_TEST(test_record_compare_neighboring_steps_are_ordered);
-    RUN_TEST(test_record_compare_boundary_starts_the_step_above);
-    RUN_TEST(test_store_create_starts_empty);
-    RUN_TEST(test_store_destroy_empty_store);
-    RUN_TEST(test_store_insert_into_empty_store);
-    RUN_TEST(test_store_count_and_height_after_1_2_and_100_inserts);
-    RUN_TEST(test_store_one_temperature_stays_one_node_tall);
-    RUN_TEST(test_store_find_gets_every_duplicate_in_order);
-    RUN_TEST(test_store_find_missing_key_fails);
-    RUN_TEST(test_store_walk_visits_records_in_key_order);
-
-    return UNITY_END();
+void run_store_tests(void) {
+    check_record_compare_same_step_is_equal();
+    check_record_compare_neighboring_steps_are_ordered();
+    check_record_compare_boundary_starts_the_step_above();
+    check_store_create_starts_empty();
+    check_store_destroy_empty_store();
+    check_store_insert_into_empty_store();
+    check_store_count_and_height_after_1_2_and_100_inserts();
+    check_store_one_temperature_stays_one_node_tall();
+    check_store_find_gets_every_duplicate_in_order();
+    check_store_find_missing_key_fails();
+    check_store_walk_visits_records_in_key_order();
 }

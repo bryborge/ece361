@@ -4,7 +4,7 @@ This document records the design decisions for the garage door opener.
 
 ## Decisions
 
-The assignment's three operating rules leave several cases open. The decisions about the remote, the freeze guard, the light barrier, and timing are implemented in `src/fsm.c`. The decisions about the event history and the record store are implemented in `src/main.c`.
+The assignment's three operating rules leave several cases open. The decisions about the remote, the freeze guard, the light barrier, and timing are implemented in `fsm.c`. The decisions about the event history and the record store are implemented in `main.c`.
 
 ### Remote
 

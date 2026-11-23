@@ -22,7 +22,7 @@ int sensor_read(uint32_t *base, time_t now, reading_t *reading) {
     if (rc != 0) return rc;
 
     reading->timestamp = now;
-    /* See: docs/AHT20.md for details on these values. */
+    /* See: AHT20.md for details on these values. */
     reading->temp_c = round_to_tenth(st / 1048576.0 * 200.0 - 50.0);
     reading->rh_pct = round_to_tenth(srh / 1048576.0 * 100.0);
 
