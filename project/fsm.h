@@ -1,123 +1,161 @@
-/*
- * fsm.h:
- *
- * The garage door's state machine. The transitions live in a table indexed
- * by state and event; SPEC.md gives the table and the reason for each row.
+/**
+ * @file fsm.h
+ * @brief The garage door state machine.
  */
 #ifndef FSM_H
 #define FSM_H
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <time.h>
 
-/* Bits of the switch register (ASSIGNMENT.md section 3). */
-#define SW_REMOTE  (1u << 0)    /* a press: each change from 0 to 1 counts */
-#define SW_BARRIER (1u << 1)    /* a level: on while something is in the way */
-
-/* Bits of the LED register (ASSIGNMENT.md section 3). */
-#define LED_MOTOR_UP   (1u << 0)
-#define LED_MOTOR_DOWN (1u << 1)
-
-/* CLOSED is the initial state. */
-typedef enum { CLOSED, OPENING, OPEN, CLOSING, OBSTRUCTED, N_STATES } state_t;
-
+/* States */
 typedef enum {
-    E_REMOTE,                   /* press, above FREEZE_C, barrier clear */
-    E_REMOTE_FROZEN,            /* press, at or below FREEZE_C, barrier clear */
-    E_REMOTE_BARRIER,           /* press, above FREEZE_C, barrier on */
-    E_REMOTE_FROZEN_BARRIER,    /* press, at or below FREEZE_C, barrier on */
-    E_BARRIER,                  /* the barrier is on */
-    E_TIMEOUT,                  /* the current state's time is up */
+    CLOSED,                     // The door is closed (Initial state).
+    OPENING,                    // The door is opening.
+    OPEN,                       // The door is open.
+    CLOSING,                    // The door is closing.
+    OBSTRUCTED,                 // The door is obstructed by something.
+    N_STATES
+} state_t;
+
+/* Events */
+typedef enum {
+    E_REMOTE_PRESSED,           // The remote was pressed, temp > 1.0 C.
+    E_REMOTE_PRESSED_FREEZING,  // The remote was pressed, temp <= 1.0 C.
+    E_BARRIER_BLOCKED,          // The light barrier is triggered.
+    E_TIMER_EXPIRED,            // The door's travel or its pause is complete.
     N_EVENTS
 } event_t;
 
+/* Actions */
 typedef enum {
-    A_UNDEFINED,                /* 0: an entry nobody filled in */
-    A_NONE,
-    A_OBSTRUCT,
-    A_REFUSE_FROZEN,
-    A_REFUSE_BARRIER,
+    A_UNDEFINED,                // Undefined transition.
+    A_NONE,                     // Do nothing.
+    A_LOG_REFUSAL,              // Record a refused remote press.
+    A_LOG_OBSTRUCTION,          // Record an obstruction.
     N_ACTIONS
 } action_t;
 
-typedef struct { state_t next; action_t action; } transition_t;
+typedef struct {
+    bool remote_on;
+    bool barrier_blocked;
+    float temp_c;
+} fsm_inputs_t;
 
-/* An RGB LED color: three duty cycles. fsm.c can't call iom361, so main passes
- * these to build_rgb_reg. */
-typedef struct { uint8_t red; uint8_t green; uint8_t blue; } rgb_t;
+typedef struct {
+    bool motor_up;
+    bool motor_down;
+    uint8_t red;
+    uint8_t green;
+    uint8_t blue;
+} fsm_outputs_t;
 
-extern const transition_t fsm_table[N_STATES][N_EVENTS];
-
-/* The door: its state, when it entered that state, and where it was then.
- * Position runs from 0 (down) to 15 (up); the current position is derived
- * from the clock (SPEC.md, Position and timer). It starts as
- * { CLOSED, <scenario start>, 0 }. */
 typedef struct {
     state_t state;
-    time_t entered_at;
-    int pos_at_entry;
-} door_t;
+    bool remote_was_on;
+    int position;
+    int pause_ticks_left;
+} fsm_t;
+
+typedef struct {
+    bool remote_pressed;
+    bool press_refused;
+    bool obstruction_detected;
+    bool freeze_guard_active;
+} fsm_report_t;
+
+/*
+ * The fields of the status word: one 32-bit word that summarizes the machine.
+ * Each hex digit holds one kind of information, so the word can be read at a
+ * glance:
+ *
+ *   Bits 0 to 2   The state.
+ *   Bit  4        The up motor is on.
+ *   Bit  5        The down motor is on.
+ *   Bit  6        The freeze guard is active.
+ *
+ * Every other bit is 0.
+ */
+typedef struct {
+    state_t state;
+    bool motor_up;
+    bool motor_down;
+    bool freeze_guard_active;
+} fsm_status_t;
 
 /**
- * Given a state `s` and an event `e`, returns the next state and stores the
- * action to take in *action. Assumes `s` and `e` are in range and action is
- * not `NULL`.
+ * Initialize a machine in its starting condition. The garage door is closed,
+ * and the remote is off before the first tick.
+ *
+ * @return The machine, for the caller to keep and pass to fsm_tick.
  */
-state_t fsm_step(state_t s, event_t e, action_t *action);
+fsm_t fsm_init(void);
 
 /**
- * Runs one tick of the door at time `now`: looks up the barrier, a press,
- * and the timeout in the table, in that order, and updates *d. Returns the
- * tick's action, or A_NONE. Assumes `d` is not `NULL` and `now` is not
- * before `d->entered_at`.
+ * Run the machine for one tick. Events are derived from the inputs and
+ * applied in a fixed order:
+ *
+ *   1. Barrier: the light barrier is blocked.
+ *   2. Completion: an opening or closing door moves one step, and an
+ *      obstructed door counts down its pause. Reaching the end of travel or
+ *      of the pause completes the state.
+ *   3. Press: the remote went from off to on since the previous tick.
+ *
+ * A state entered during a tick does not move or count down until the next
+ * tick. Asserts that no argument is NULL.
+ *
+ * @param fsm    The machine to advance.
+ * @param inputs What the machine sees on this tick.
+ * @param report Where to store what happened on this tick. Every field is
+ *               written.
  */
-action_t fsm_tick(door_t *d, time_t now, uint32_t prev_switches,
-                  uint32_t switches, float temp_c);
+void fsm_tick(fsm_t *fsm, const fsm_inputs_t *inputs, fsm_report_t *report);
 
 /**
- * Given the switch register on the previous tick and on this one, returns
- * whether REMOTE was pressed: its bit went from 0 to 1. Other bits are
- * ignored.
+ * Look up the transition for an event occurring in a state. The machine keeps
+ * no state of its own: the caller holds the current state and stores the one
+ * returned. Asserts that state and event are in range and action is not NULL.
+ *
+ * @param state  The current state of the machine.
+ * @param event  The event that occurred.
+ * @param action Where to store the action to take.
+ * @return The next state.
  */
-bool fsm_remote_pressed(uint32_t prev, uint32_t now);
+state_t fsm_step(state_t state, event_t event, action_t *action);
 
 /**
- * Given a state `s`, returns the LED register for it: MOTOR_UP (bit 0) while
- * OPENING, MOTOR_DOWN (bit 1) while CLOSING, otherwise 0. Assumes `s` is in
- * range.
+ * Look up the outputs for a state: which motor runs, and the color of the
+ * status light as red, green, and blue levels (0 to 255). The outputs hold
+ * for as long as the machine is in the state. Asserts that state is in range.
+ *
+ * @param state The state to look up.
+ * @return The outputs for the state.
  */
-uint32_t fsm_leds(state_t s);
+fsm_outputs_t fsm_outputs(state_t state);
 
 /**
- * Given a state `s`, returns its color (SPEC.md, RGB color of each state).
- * Assumes `s` is in range.
+ * Pack the fields into a status word. Asserts that the state is in range.
+ *
+ * @param status The fields to pack.
+ * @return The status word, with every unused bit 0.
  */
-rgb_t fsm_rgb(state_t s);
+uint32_t fsm_status_pack(fsm_status_t status);
 
 /**
- * Given a state `s` and a temperature, returns whether the freeze guard is
- * active: a press right now would be refused (rule 3). That takes both CLOSED
- * and a temperature at or below FREEZE_C. Assumes `s` is in range.
+ * Unpack a status word into its fields. Unused bits are ignored. Asserts
+ * that the word holds a valid state.
+ *
+ * @param word The status word.
+ * @return The fields held in the word.
  */
-bool fsm_freeze_active(state_t s, float temp_c);
+fsm_status_t fsm_status_unpack(uint32_t word);
 
 /**
- * Given a state `s`, returns its name (e.g. `OPENING`), or `?` if `s` is out
- * of range.
+ * Get the name of a state. Asserts that state is in range.
+ *
+ * @param state The state to name.
+ * @return A string that is valid for the life of the program.
  */
-const char *state_name(state_t s);
-
-/**
- * Given an event `e`, returns its name without the `E_` prefix (e.g.
- * `REMOTE_FROZEN`), or `?` if `e` is out of range.
- */
-const char *event_name(event_t e);
-
-/**
- * Given an action `a`, returns its name without the `A_` prefix (e.g.
- * `OBSTRUCT`), or `?` if `a` is out of range.
- */
-const char *action_name(action_t a);
+const char *fsm_state_name(state_t state);
 
 #endif

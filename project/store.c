@@ -1,182 +1,256 @@
-/*
- * store.c:
- *
- * The store as a sorted array of records, for now; week 8 replaces the
- * inside with a binary search tree. There is one store, static, marked
- * "in use" or "free".
+/**
+ * @file store.c
+ * @brief The record store.
  */
 #include <assert.h>
 #include <math.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
 
 #include "store.h"
 
-/* Records the store can hold, about 17 minutes of one-second ticks. The
- * week-8 tree allocates per node, and this cap goes away with it. */
-#define STORE_CAP 1024
+/* The room a new node's array starts with. */
+static const size_t node_initial_capacity = 1;
 
-struct store {
-    int in_use;               /* 1 while handed out, 0 when free */
-    int n;                    /* records held: r[0..n-1] */
-    record_t r[STORE_CAP];    /* sorted by key, equal keys in insertion order */
+/*
+ * One node per key. Every record with that key is kept in the node's array,
+ * oldest first.
+ */
+struct node {
+    record_t *records;          // The array, oldest first.
+    size_t count;               // The number of records in use.
+    size_t capacity;            // The number of records there is room for.
+    struct node *left;          // Keys less than this node's.
+    struct node *right;         // Keys greater than this node's.
 };
 
-/* The one store. Starts all zero (free). */
-static struct store pool;
+struct store {
+    struct node *root;
+};
 
-/**
- * Quantizes a temperature to its 0.5 °C step. floor, not round, so that
- * 21.0 through 21.4 share a key and 21.5 starts the next one. Multiplying a
- * float by 2 is exact, so the boundaries x.0 and x.5 land exactly.
- *
- * @param temp_c The temperature in °C.
- * @return The index of its step: floor(temp_c / 0.5).
- */
-static int quantize(float temp_c) {
-    return (int) floorf(temp_c * 2.0f);
-}
-
-/**
- * Compares two records by quantized temperature only. The store keeps
- * equal keys in insertion order itself; this does not tie-break.
- *
- * @param a The first record.
- * @param b The second record.
- * @return -1, 0, or 1 as a's key is below, equal to, or above b's.
- */
 int record_compare(const record_t *a, const record_t *b) {
-    assert(a != NULL && b != NULL);
+    assert(a != NULL);
+    assert(b != NULL);
 
-    int ka = quantize(a->reading.temp_c);
-    int kb = quantize(b->reading.temp_c);
+    /*
+     * The key is the number of the 0.5 °C step. Doubling the temperature
+     * makes each step 1 wide, and floorf rounds down.
+     */
+    const float key_a = floorf(a->reading.temp_c * 2.0f);
+    const float key_b = floorf(b->reading.temp_c * 2.0f);
 
-    return (ka > kb) - (ka < kb);
-}
-
-/**
- * Hands out the store, marked in use and emptied.
- *
- * @return The store, or NULL if it is already in use.
- */
-store_t *store_create(void) {
-    if (pool.in_use) return NULL;
-
-    pool.in_use = 1;
-    pool.n = 0;
-
-    return &pool;
-}
-
-/**
- * Marks store s free. Its records are left as they are; store_create empties
- * the store when it hands it out.
- *
- * @param s The store to release; NULL does nothing.
- */
-void store_destroy(store_t *s) {
-    if (s != NULL) s->in_use = 0;
-}
-
-/**
- * Inserts a copy of r after the last record whose key is not above r's, so
- * that equal keys stay in insertion order. The records from there to the
- * end each move up by one first.
- *
- * @param s The store to insert into.
- * @param r The record to copy in.
- * @return 0, or -1 and nothing changed if s is full.
- */
-int store_insert(store_t *s, const record_t *r) {
-    assert(s != NULL && r != NULL);
-
-    if (s->n == STORE_CAP) return -1;
-
-    int pos = 0;
-    while (pos < s->n && record_compare(&s->r[pos], r) <= 0) pos++;
-
-    /* Move r[pos..n-1] up by one, starting from the end, so that each record
-     * is copied before the one below it lands on top of it. */
-    for (int i = s->n; i > pos; i--) {
-        s->r[i] = s->r[i - 1];
-    }
-
-    s->r[pos] = *r;
-    s->n++;
+    if (key_a < key_b) return -1;
+    if (key_a > key_b) return 1;
 
     return 0;
 }
 
-/**
- * Skips the records with a lower key, then copies each record with temp_c's
- * key. They are contiguous because the array is sorted.
- *
- * @param s      The store to search.
- * @param temp_c A temperature in the step to find.
- * @param out    Where to copy the matching records.
- * @param max    How many records out has room for.
- * @return How many records match; only the first max are copied.
- */
-int store_find(const store_t *s, float temp_c, record_t out[], int max) {
-    assert(s != NULL && out != NULL);
+store_t *store_create(void) {
+    store_t *store = malloc(sizeof *store);
+    if (store == NULL) return NULL;
 
-    int key = quantize(temp_c);
-    int i = 0;
+    store->root = NULL;
 
-    while (i < s->n && quantize(s->r[i].reading.temp_c) < key) i++;
-
-    int found = 0;
-    for (; i < s->n && quantize(s->r[i].reading.temp_c) == key; i++) {
-        if (found < max) out[found] = s->r[i];
-        found++;
-    }
-
-    return found;
+    return store;
 }
 
-/**
- * Copies every record. The array is kept sorted, so copying it from r[0]
- * gives key order.
- *
- * @param s   The store to walk.
- * @param out Where to copy the records.
- * @param max How many records out has room for.
- * @return How many records s holds; only the first max are copied.
+/*
+ * Free every node in the subtree rooted at node, along with each node's
+ * records. Both subtrees are freed before the node itself. Asserts that
+ * node is not NULL.
  */
-int store_walk(const store_t *s, record_t out[], int max) {
-    assert(s != NULL && out != NULL);
+static void free_subtree(struct node *node) {
+    assert(node != NULL);
 
-    for (int i = 0; i < s->n && i < max; i++) {
-        out[i] = s->r[i];
-    }
+    if (node->left != NULL) free_subtree(node->left);
+    if (node->right != NULL) free_subtree(node->right);
 
-    return s->n;
+    free(node->records);
+    free(node);
 }
 
-/**
- * @param s The store to look at.
- * @return The number of records held.
- */
-int store_count(const store_t *s) {
-    assert(s != NULL);
+void store_destroy(store_t *store) {
+    if (store == NULL) return;
+    if (store->root != NULL) free_subtree(store->root);
 
-    return s->n;
+    free(store);
 }
 
-/**
- * An array has no height of its own. This returns the number of distinct
- * keys, which is the height of a binary search tree with one node per key
- * built from inserts in ascending key order, so tests that insert that way
- * hold for the week-8 tree too.
- *
- * @param s The store to look at.
- * @return The number of distinct keys; 0 when empty.
+/*
+ * Count the records in the subtree rooted at node: every record in every
+ * node, not the number of nodes. An empty subtree (NULL) counts as 0.
  */
-int store_height(const store_t *s) {
-    assert(s != NULL);
+static size_t count_subtree(const struct node *node) {
+    if (node == NULL) return 0;
 
-    int h = 0;
-    for (int i = 0; i < s->n; i++) {
-        if (i == 0 || record_compare(&s->r[i - 1], &s->r[i]) != 0) h++;
+    return node->count
+         + count_subtree(node->left)
+         + count_subtree(node->right);
+}
+
+size_t store_count(const store_t *store) {
+    assert(store != NULL);
+
+    return count_subtree(store->root);
+}
+
+/*
+ * Insert a copy of record into the subtree rooted at node, and return the
+ * subtree's root. Adds a new node if the subtree was empty. Sets *rc to 0
+ * on success, or to 1 if memory could not be allocated, in which case the
+ * subtree is unchanged.
+ */
+static struct node *insert_subtree(
+    struct node *node, const record_t *record, int *rc
+) {
+    /* The record's key is new, so it gets its own node. */
+    if (node == NULL) {
+        struct node *created = malloc(sizeof *created);
+        if (created == NULL) {
+            *rc = 1;
+            return NULL;
+        }
+
+        created->records =
+            malloc(node_initial_capacity * sizeof *created->records);
+        if (created->records == NULL) {
+            free(created);
+            *rc = 1;
+            return NULL;
+        }
+
+        created->records[0] = *record;
+        created->count = 1;
+        created->capacity = node_initial_capacity;
+        created->left = NULL;
+        created->right = NULL;
+
+        *rc = 0;
+        return created;
     }
 
-    return h;
+    const int order = record_compare(record, &node->records[0]);
+
+    if (order < 0) {
+        node->left = insert_subtree(node->left, record, rc);
+        return node;
+    }
+    if (order > 0) {
+        node->right = insert_subtree(node->right, record, rc);
+        return node;
+    }
+
+    /*
+     * The same key: append to this node's records, doubling the room first
+     * if it is full.
+     */
+    if (node->count == node->capacity) {
+        if (node->capacity > SIZE_MAX / 2 / sizeof *node->records) {
+            *rc = 1;
+            return node;
+        }
+
+        const size_t capacity = node->capacity * 2;
+
+        record_t *records = realloc(node->records, capacity * sizeof *records);
+        if (records == NULL) {
+            *rc = 1;
+            return node;
+        }
+
+        node->records = records;
+        node->capacity = capacity;
+    }
+
+    node->records[node->count] = *record;
+    node->count++;
+
+    *rc = 0;
+    return node;
+}
+
+int store_insert(store_t *store, const record_t *record) {
+    assert(store != NULL);
+    assert(record != NULL);
+
+    int rc;
+    store->root = insert_subtree(store->root, record, &rc);
+
+    return rc;
+}
+
+/*
+ * Count the nodes along the longest path down from node. An empty subtree
+ * (NULL) has a height of 0.
+ */
+static size_t height_subtree(const struct node *node) {
+    if (node == NULL) return 0;
+
+    const size_t left = height_subtree(node->left);
+    const size_t right = height_subtree(node->right);
+
+    return 1 + (left > right ? left : right);
+}
+
+size_t store_height(const store_t *store) {
+    assert(store != NULL);
+
+    return height_subtree(store->root);
+}
+
+int store_find(
+    const store_t *store, const record_t *key,
+    const record_t **records, size_t *count
+) {
+    assert(store != NULL);
+    assert(key != NULL);
+    assert(records != NULL);
+    assert(count != NULL);
+
+    const struct node *node = store->root;
+
+    while (node != NULL) {
+        const int order = record_compare(key, &node->records[0]);
+
+        if (order < 0) {
+            node = node->left;
+        } else if (order > 0) {
+            node = node->right;
+        } else {
+            *records = node->records;
+            *count = node->count;
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+/* Visit every record in the subtree rooted at node, in key order. */
+static void walk_subtree(
+    const struct node *node,
+    void (*visit)(const record_t *record, void *context),
+    void *context
+) {
+    if (node == NULL) return;
+
+    walk_subtree(node->left, visit, context);
+
+    for (size_t i = 0; i < node->count; i++) {
+        visit(&node->records[i], context);
+    }
+
+    walk_subtree(node->right, visit, context);
+}
+
+void store_walk(
+    const store_t *store,
+    void (*visit)(const record_t *record, void *context),
+    void *context
+) {
+    assert(store != NULL);
+    assert(visit != NULL);
+
+    walk_subtree(store->root, visit, context);
 }

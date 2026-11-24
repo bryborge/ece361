@@ -1,98 +1,264 @@
-/*
- * fsm.c:
+/**
+ * @file fsm.c
+ * @brief The garage door state machine.
  *
- * The garage door's transition table and the functions that use it.
+ * The machine is built in two layers. The transition table maps a state and
+ * an event to the next state and an action, and fsm_step looks it up. On top
+ * of that, fsm_tick turns one tick's inputs into events, feeds them to the
+ * table in a fixed order, and keeps the door's position and pause countdown.
  */
 #include <assert.h>
 #include <stddef.h>
 
 #include "fsm.h"
 
-/* For each state and event, the next state and the action to take. SPEC.md
- * gives the reason for each row. † marks an entry that can never be
- * reached; it is filled in because every entry must be. */
-const transition_t fsm_table[N_STATES][N_EVENTS] = {
+/* Rule values from the assignment. */
+static const int travel_ticks         = 15;
+static const int pause_ticks          = 2;
+static const float freeze_threshold_c = 1.0f;
+
+/* Transitions -------------------------------------------------------------- */
+
+typedef struct {
+    state_t next;
+    action_t action;
+} transition_t;
+
+/*
+ * The transition table, indexed by state and then by event. Each cell holds
+ * the next state and the action to take. A cell left out of the initializer
+ * is zeroed, which gives it the action A_UNDEFINED.
+ */
+static const transition_t transitions[N_STATES][N_EVENTS] = {
     [CLOSED] = {
-        [E_REMOTE]                = { OPENING,    A_NONE           },
-        [E_REMOTE_FROZEN]         = { CLOSED,     A_REFUSE_FROZEN  },
-        [E_REMOTE_BARRIER]        = { OPENING,    A_NONE           },
-        [E_REMOTE_FROZEN_BARRIER] = { CLOSED,     A_REFUSE_FROZEN  },
-        [E_BARRIER]               = { CLOSED,     A_NONE           },
-        [E_TIMEOUT]               = { CLOSED,     A_NONE           },  /* † */
+        [E_REMOTE_PRESSED]          = { OPENING, A_NONE },
+        [E_REMOTE_PRESSED_FREEZING] = { CLOSED, A_LOG_REFUSAL },
+        [E_BARRIER_BLOCKED]         = { CLOSED, A_NONE },
+        [E_TIMER_EXPIRED]           = { CLOSED, A_NONE }
     },
     [OPENING] = {
-        [E_REMOTE]                = { CLOSING,    A_NONE           },
-        [E_REMOTE_FROZEN]         = { CLOSING,    A_NONE           },
-        [E_REMOTE_BARRIER]        = { OPENING,    A_REFUSE_BARRIER },
-        [E_REMOTE_FROZEN_BARRIER] = { OPENING,    A_REFUSE_BARRIER },
-        [E_BARRIER]               = { OPENING,    A_NONE           },
-        [E_TIMEOUT]               = { OPEN,       A_NONE           },
+        [E_REMOTE_PRESSED]          = { CLOSING, A_NONE },
+        [E_REMOTE_PRESSED_FREEZING] = { CLOSING, A_NONE },
+        [E_BARRIER_BLOCKED]         = { OPENING, A_NONE },
+        [E_TIMER_EXPIRED]           = { OPEN, A_NONE }
     },
     [OPEN] = {
-        [E_REMOTE]                = { CLOSING,    A_NONE           },
-        [E_REMOTE_FROZEN]         = { CLOSING,    A_NONE           },
-        [E_REMOTE_BARRIER]        = { OPEN,       A_REFUSE_BARRIER },
-        [E_REMOTE_FROZEN_BARRIER] = { OPEN,       A_REFUSE_BARRIER },
-        [E_BARRIER]               = { OPEN,       A_NONE           },
-        [E_TIMEOUT]               = { OPEN,       A_NONE           },  /* † */
+        [E_REMOTE_PRESSED]          = { CLOSING, A_NONE },
+        [E_REMOTE_PRESSED_FREEZING] = { CLOSING, A_NONE },
+        [E_BARRIER_BLOCKED]         = { OPEN, A_NONE },
+        [E_TIMER_EXPIRED]           = { OPEN, A_NONE }
     },
     [CLOSING] = {
-        [E_REMOTE]                = { OPENING,    A_NONE           },
-        [E_REMOTE_FROZEN]         = { OPENING,    A_NONE           },
-        [E_REMOTE_BARRIER]        = { OBSTRUCTED, A_OBSTRUCT       },  /* † */
-        [E_REMOTE_FROZEN_BARRIER] = { OBSTRUCTED, A_OBSTRUCT       },  /* † */
-        [E_BARRIER]               = { OBSTRUCTED, A_OBSTRUCT       },
-        [E_TIMEOUT]               = { CLOSED,     A_NONE           },
+        [E_REMOTE_PRESSED]          = { OPENING, A_NONE },
+        [E_REMOTE_PRESSED_FREEZING] = { OPENING, A_NONE },
+        [E_BARRIER_BLOCKED]         = { OBSTRUCTED, A_LOG_OBSTRUCTION },
+        [E_TIMER_EXPIRED]           = { CLOSED, A_NONE }
     },
     [OBSTRUCTED] = {
-        [E_REMOTE]                = { OBSTRUCTED, A_NONE           },
-        [E_REMOTE_FROZEN]         = { OBSTRUCTED, A_NONE           },
-        [E_REMOTE_BARRIER]        = { OBSTRUCTED, A_NONE           },
-        [E_REMOTE_FROZEN_BARRIER] = { OBSTRUCTED, A_NONE           },
-        [E_BARRIER]               = { OBSTRUCTED, A_NONE           },
-        [E_TIMEOUT]               = { OPENING,    A_NONE           },
-    },
+        [E_REMOTE_PRESSED]          = { OBSTRUCTED, A_NONE },
+        [E_REMOTE_PRESSED_FREEZING] = { OBSTRUCTED, A_NONE },
+        [E_BARRIER_BLOCKED]         = { OBSTRUCTED, A_NONE },
+        [E_TIMER_EXPIRED]           = { OPENING, A_NONE }
+    }
 };
 
-/* At or below this temperature, REMOTE in CLOSED is refused (rule 3). */
-#define FREEZE_C 1.0f
+state_t fsm_step(state_t state, event_t event, action_t *action) {
+    assert(state >= 0 && state < N_STATES);
+    assert(event >= 0 && event < N_EVENTS);
+    assert(action != NULL);
 
-#define TRAVEL   15     /* ticks for a full open or close (rule 1) */
-#define PAUSE    2      /* ticks OBSTRUCTED holds the door (rule 2) */
-/* CLOSED and OPEN never time out. A time allowed of 0 would behave the same
- * today, because their timeout entries (†) loop back with A_NONE, but it
- * would look them up on every tick: an edit to either entry would then act
- * every tick instead of never. */
-#define NO_TIMER (-1)
+    const transition_t t = transitions[state][event];
 
-/* The press event for each combination of the freeze guard and the barrier,
- * indexed [frozen][barrier]. */
-static const event_t press_events[2][2] = {
-    [false][false] = E_REMOTE,
-    [false][true]  = E_REMOTE_BARRIER,
-    [true][false]  = E_REMOTE_FROZEN,
-    [true][true]   = E_REMOTE_FROZEN_BARRIER,
+    *action = t.action;
+    return t.next;
+}
+
+/* Machine ------------------------------------------------------------------ */
+
+fsm_t fsm_init(void) {
+    return (fsm_t){
+        .state            = CLOSED,
+        .remote_was_on    = false,
+        .position         = 0,
+        .pause_ticks_left = 0,
+    };
+}
+
+/**
+ * Feed one event to the transition table, then update the machine and the
+ * report from the result.
+ */
+static void dispatch(fsm_t *fsm, event_t event, fsm_report_t *report) {
+    action_t action;
+    const state_t next = fsm_step(fsm->state, event, &action);
+
+    switch (action) {
+        case A_NONE:
+            break;
+        case A_LOG_REFUSAL:
+            report->press_refused = true;
+            break;
+        case A_LOG_OBSTRUCTION:
+            report->obstruction_detected = true;
+            break;
+        default:
+            assert(false && "transition has no action");
+            break;
+    }
+
+    /* The pause starts when the door becomes obstructed. */
+    if (next == OBSTRUCTED && fsm->state != OBSTRUCTED) {
+        fsm->pause_ticks_left = pause_ticks;
+    }
+
+    fsm->state = next;
+}
+
+void fsm_tick(fsm_t *fsm, const fsm_inputs_t *inputs, fsm_report_t *report) {
+    assert(fsm != NULL);
+    assert(inputs != NULL);
+    assert(report != NULL);
+
+    *report = (fsm_report_t){0};
+
+    const bool freezing = inputs->temp_c <= freeze_threshold_c;
+    const state_t starting_state = fsm->state;
+
+    /* 1. Barrier check. */
+    if (inputs->barrier_blocked) {
+        dispatch(fsm, E_BARRIER_BLOCKED, report);
+    }
+
+    /*
+     * 2. Completion check. Skipped if the barrier just changed the state: a
+     * state entered during this tick does not move or count down until the
+     * next one.
+     */
+    if (fsm->state == starting_state) {
+        bool complete = false;
+
+        switch (fsm->state) {
+            case OPENING:
+                if (fsm->position < travel_ticks) fsm->position++;
+                complete = fsm->position == travel_ticks;
+                break;
+            case CLOSING:
+                if (fsm->position > 0) fsm->position--;
+                complete = fsm->position == 0;
+                break;
+            case OBSTRUCTED:
+                if (fsm->pause_ticks_left > 0) fsm->pause_ticks_left--;
+                complete = fsm->pause_ticks_left == 0;
+                break;
+            default:
+                break;
+        }
+
+        if (complete) dispatch(fsm, E_TIMER_EXPIRED, report);
+    }
+
+    /* 3. Remote check. on now, off before. */
+    const bool pressed = inputs->remote_on && !fsm->remote_was_on;
+    fsm->remote_was_on = inputs->remote_on;
+
+    if (pressed) {
+        report->remote_pressed = true;
+        dispatch(fsm,
+            freezing ? E_REMOTE_PRESSED_FREEZING : E_REMOTE_PRESSED,
+            report);
+    }
+
+    report->freeze_guard_active = freezing && fsm->state == CLOSED;
+}
+
+/* Outputs ------------------------------------------------------------------ */
+
+static const fsm_outputs_t outputs[] = {
+    /*               up     down   red  green  blue */
+    [CLOSED]     = { false, false,   0,  255,    0 },  // Green
+    [OPENING]    = { true,  false, 255,  255,    0 },  // Yellow
+    [OPEN]       = { false, false,   0,    0,  255 },  // Blue
+    [CLOSING]    = { false, true,  255,    0,  255 },  // Magenta
+    [OBSTRUCTED] = { false, false, 255,    0,    0 },  // Red
 };
 
-/* The LEDs for each state: the motor runs only while the door moves. */
-static const uint32_t state_leds[N_STATES] = {
-    [CLOSED]     = 0,
-    [OPENING]    = LED_MOTOR_UP,
-    [OPEN]       = 0,
-    [CLOSING]    = LED_MOTOR_DOWN,
-    [OBSTRUCTED] = 0,
-};
+/* Fails the build if a state is added without an entry in outputs. */
+_Static_assert(
+    sizeof outputs / sizeof outputs[0] == N_STATES,
+    "outputs are out of step with state_t"
+);
 
-/* The color of each state (SPEC.md, RGB color of each state). */
-static const rgb_t state_rgb[N_STATES] = {
-    [CLOSED]     = {   0, 255,   0 },   /* green */
-    [OPENING]    = {   0, 255, 255 },   /* cyan */
-    [OPEN]       = {   0,   0, 255 },   /* blue */
-    [CLOSING]    = { 255, 255,   0 },   /* yellow */
-    [OBSTRUCTED] = { 255,   0,   0 },   /* red */
-};
+fsm_outputs_t fsm_outputs(state_t state) {
+    assert(state >= 0 && state < N_STATES);
 
-static const char *const state_names[N_STATES] = {
+    return outputs[state];
+}
+
+/* Status word -------------------------------------------------------------- */
+
+/* The layout: the lowest bit of each field, and the state's width. */
+static const unsigned status_state_lsb        = 0;
+static const unsigned status_state_width      = 3;
+static const unsigned status_motor_up_lsb     = 4;
+static const unsigned status_motor_down_lsb   = 5;
+static const unsigned status_freeze_guard_lsb = 6;
+
+/**
+ * Get the field of a word that is width bits wide and starts at bit lsb.
+ */
+static uint32_t get_field(uint32_t word, unsigned lsb, unsigned width) {
+    assert(width > 0 && width < 32 && lsb + width <= 32);
+
+    const uint32_t mask = (UINT32_C(1) << width) - 1;
+
+    return (word >> lsb) & mask;
+}
+
+/**
+ * Get a copy of a word with one field replaced by value. The field is width
+ * bits wide and starts at bit lsb. Bits of value that do not fit are dropped.
+ */
+static uint32_t set_field(
+    uint32_t word, unsigned lsb, unsigned width, uint32_t value
+) {
+    assert(width > 0 && width < 32 && lsb + width <= 32);
+
+    const uint32_t mask = ((UINT32_C(1) << width) - 1) << lsb;
+
+    return (word & ~mask) | ((value << lsb) & mask);
+}
+
+uint32_t fsm_status_pack(fsm_status_t status) {
+    assert(status.state >= 0 && status.state < N_STATES);
+
+    uint32_t word = 0;
+
+    word = set_field(word, status_state_lsb, status_state_width, status.state);
+    word = set_field(word, status_motor_up_lsb, 1, status.motor_up);
+    word = set_field(word, status_motor_down_lsb, 1, status.motor_down);
+    word = set_field(word, status_freeze_guard_lsb, 1,
+        status.freeze_guard_active);
+
+    return word;
+}
+
+fsm_status_t fsm_status_unpack(uint32_t word) {
+    const uint32_t state =
+        get_field(word, status_state_lsb, status_state_width);
+
+    assert(state < N_STATES);
+
+    return (fsm_status_t){
+        .state               = (state_t)state,
+        .motor_up            = get_field(word, status_motor_up_lsb, 1),
+        .motor_down          = get_field(word, status_motor_down_lsb, 1),
+        .freeze_guard_active = get_field(word, status_freeze_guard_lsb, 1),
+    };
+}
+
+/* State names -------------------------------------------------------------- */
+
+static const char *const state_names[] = {
     [CLOSED]     = "CLOSED",
     [OPENING]    = "OPENING",
     [OPEN]       = "OPEN",
@@ -100,250 +266,14 @@ static const char *const state_names[N_STATES] = {
     [OBSTRUCTED] = "OBSTRUCTED",
 };
 
-static const char *const event_names[N_EVENTS] = {
-    [E_REMOTE]                = "REMOTE",
-    [E_REMOTE_FROZEN]         = "REMOTE_FROZEN",
-    [E_REMOTE_BARRIER]        = "REMOTE_BARRIER",
-    [E_REMOTE_FROZEN_BARRIER] = "REMOTE_FROZEN_BARRIER",
-    [E_BARRIER]               = "BARRIER",
-    [E_TIMEOUT]               = "TIMEOUT",
-};
+/* Fails the build if a state is added without an entry in state_names. */
+_Static_assert(
+    sizeof state_names / sizeof state_names[0] == N_STATES,
+    "state_names are out of step with state_t"
+);
 
-static const char *const action_names[N_ACTIONS] = {
-    [A_UNDEFINED]      = "UNDEFINED",
-    [A_NONE]           = "NONE",
-    [A_OBSTRUCT]       = "OBSTRUCT",
-    [A_REFUSE_FROZEN]  = "REFUSE_FROZEN",
-    [A_REFUSE_BARRIER] = "REFUSE_BARRIER",
-};
+const char *fsm_state_name(state_t state) {
+    assert(state >= 0 && state < N_STATES);
 
-/**
- * Takes one step of the state machine: looks up the entry for event e in
- * state s, once, with no branch on the state.
- *
- * @param s      The current state; asserted to be in range.
- * @param e      The event that happened; asserted to be in range.
- * @param action Where to store the action to take; asserted not NULL.
- * @return The next state.
- */
-state_t fsm_step(state_t s, event_t e, action_t *action) {
-    assert(s >= 0 && s < N_STATES);
-    assert(e >= 0 && e < N_EVENTS);
-    assert(action != NULL);
-
-    const transition_t t = fsm_table[s][e];
-
-    *action = t.action;
-    return t.next;
-}
-
-/**
- * Gives the seconds the door has spent in its current state.
- *
- * @param d   The door.
- * @param now The current time; asserted not before d->entered_at.
- * @return now - d->entered_at.
- */
-static int elapsed(const door_t *d, time_t now) {
-    assert(now >= d->entered_at);
-
-    /* Plain subtraction assumes time_t counts whole seconds. POSIX
-     * guarantees that and C11 does not; gmtime and the 2038 question in
-     * ASSIGNMENT.md already depend on it. */
-    return (int)(now - d->entered_at);
-}
-
-/**
- * Gives the door's position, derived from the clock.
- *
- * @param d   The door.
- * @param now The current time.
- * @return The position, 0 (down) to TRAVEL (up); asserted to be in range.
- */
-static int position(const door_t *d, time_t now) {
-    int pos;
-
-    switch (d->state) {
-    case OPENING: pos = d->pos_at_entry + elapsed(d, now); break;
-    case CLOSING: pos = d->pos_at_entry - elapsed(d, now); break;
-    default:      pos = d->pos_at_entry;                   break;
-    }
-    assert(pos >= 0 && pos <= TRAVEL);
-    return pos;
-}
-
-/**
- * Gives the time the door may spend in its current state, fixed when the
- * state was entered.
- *
- * @param d The door.
- * @return The ticks left to travel while OPENING or CLOSING, PAUSE while
- *         OBSTRUCTED, NO_TIMER otherwise.
- */
-static int time_allowed(const door_t *d) {
-    switch (d->state) {
-    case OPENING:    return TRAVEL - d->pos_at_entry;
-    case CLOSING:    return d->pos_at_entry;
-    case OBSTRUCTED: return PAUSE;
-    default:         return NO_TIMER;
-    }
-}
-
-/**
- * Tells whether the door's time in its current state is up.
- */
-static bool timed_out(const door_t *d, time_t now) {
-    int allowed = time_allowed(d);
-
-    return allowed != NO_TIMER && elapsed(d, now) >= allowed;
-}
-
-/**
- * Looks up event e for the door in the table. If the state changes, takes a
- * snapshot of the position first (position reads the old state), then
- * restarts the clock.
- *
- * @return The action the table gives.
- */
-static action_t apply(door_t *d, event_t e, time_t now) {
-    action_t action;
-    state_t next = fsm_step(d->state, e, &action);
-
-    if (next != d->state) {
-        d->pos_at_entry = position(d, now);
-        d->state = next;
-        d->entered_at = now;
-    }
-    return action;
-}
-
-/**
- * Keeps a tick's action. A tick has at most one: the only action the
- * barrier gives leaves the door in OBSTRUCTED, where no press is refused,
- * and the timeout gives none.
- *
- * @param kept The tick's action so far.
- * @param a    The action from the latest lookup.
- */
-static void keep(action_t *kept, action_t a) {
-    if (a == A_NONE) return;
-
-    assert(*kept == A_NONE);
-    *kept = a;
-}
-
-/**
- * Runs one tick of the door: the barrier, a press, then the timeout, each
- * looked up from the state the one before left (SPEC.md, Order).
- *
- * @param d             The door; asserted not NULL.
- * @param now           The current time; asserted not before d->entered_at.
- * @param prev_switches The switch register on the previous tick.
- * @param switches      The switch register on this tick.
- * @param temp_c        The temperature, rounded to 0.1 °C.
- * @return The tick's action, or A_NONE.
- */
-action_t fsm_tick(door_t *d, time_t now, uint32_t prev_switches,
-                  uint32_t switches, float temp_c) {
-    assert(d != NULL);
-
-    bool barrier = (switches & SW_BARRIER) != 0;
-    bool frozen = temp_c <= FREEZE_C;
-    action_t action = A_NONE;
-
-    if (barrier) keep(&action, apply(d, E_BARRIER, now));
-    if (fsm_remote_pressed(prev_switches, switches)) {
-        keep(&action, apply(d, press_events[frozen][barrier], now));
-    }
-    if (timed_out(d, now)) keep(&action, apply(d, E_TIMEOUT, now));
-
-    return action;
-}
-
-/**
- * Tells whether REMOTE was pressed between two readings of the switches.
- *
- * @param prev The switch register on the previous tick.
- * @param now  The switch register on this tick.
- * @return true if REMOTE's bit went from 0 to 1; other bits are ignored.
- */
-bool fsm_remote_pressed(uint32_t prev, uint32_t now) {
-    return !(prev & SW_REMOTE) && (now & SW_REMOTE);
-}
-
-/**
- * Gives the LED register for a state, so the LEDs can never disagree with
- * the state they show.
- *
- * @param s The state; asserted to be in range.
- * @return MOTOR_UP while OPENING, MOTOR_DOWN while CLOSING, otherwise 0.
- */
-uint32_t fsm_leds(state_t s) {
-    assert(s >= 0 && s < N_STATES);
-
-    return state_leds[s];
-}
-
-/**
- * Gives the color for a state, so the RGB LED can never disagree with the
- * state it shows.
- *
- * @param s The state; asserted to be in range.
- * @return The state's color.
- */
-rgb_t fsm_rgb(state_t s) {
-    assert(s >= 0 && s < N_STATES);
-
-    return state_rgb[s];
-}
-
-/**
- * Tells whether a press right now would be refused by the freeze guard.
- *
- * @param s      The state; asserted to be in range.
- * @param temp_c The temperature, rounded to 0.1 °C.
- * @return true if the door is CLOSED at or below FREEZE_C (rule 3).
- */
-bool fsm_freeze_active(state_t s, float temp_c) {
-    assert(s >= 0 && s < N_STATES);
-
-    return s == CLOSED && temp_c <= FREEZE_C;
-}
-
-/**
- * Names a state.
- *
- * @param s The state to name.
- * @return The name of `s` (e.g. `OPENING`), or `?` if `s` is out of range.
- */
-const char *state_name(state_t s) {
-    if (s < 0 || s >= N_STATES) return "?";
-
-    return state_names[s];
-}
-
-/**
- * Names an event.
- *
- * @param e The event to name.
- * @return The name of `e` without the `E_` prefix (e.g. `REMOTE_FROZEN`), or
- *         `?` if `e` is out of range.
- */
-const char *event_name(event_t e) {
-    if (e < 0 || e >= N_EVENTS) return "?";
-
-    return event_names[e];
-}
-
-/**
- * Names an action.
- *
- * @param a The action to name.
- * @return The name of `a` without the `A_` prefix (e.g. `OBSTRUCT`), or `?`
- *         if `a` is out of range.
- */
-const char *action_name(action_t a) {
-    if (a < 0 || a >= N_ACTIONS) return "?";
-
-    return action_names[a];
+    return state_names[state];
 }

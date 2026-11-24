@@ -1,452 +1,582 @@
 /*
  * test_fsm.c:
  *
- * Tests for fsm.c. Every cell of the transition table is written out from
- * the table in SPEC.md, not read from the code. Prints PASS or FAIL for each
- * check; test_main.c runs them and prints the summary.
+ * Tests for fsm.c. Prints PASS or FAIL for each check; test_main.c runs them
+ * and prints the summary. A check that covers every state or every cell
+ * prints the first case that fails before its FAIL line.
  */
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
+#include <stdio.h>
 
 #include "check.h"
 #include "fsm.h"
 
 /**
- * Checks that event e in state s leads to state next with action action.
+ * Runs n ticks with the same inputs.
  *
- * @return true if fsm_step gives both the expected state and action.
+ * @return true if the machine was in state s after every one of them.
  */
-static bool steps_to(state_t s, event_t e, state_t next, action_t action) {
-    /* Starts as A_UNDEFINED, so an fsm_step that never writes *action fails
-     * the check instead of reading an uninitialized value. */
-    action_t got_action = A_UNDEFINED;
-    state_t got_next = fsm_step(s, e, &got_action);
-
-    return got_next == next && got_action == action;
-}
-
-/* fsm_step: one function per row of the table. † marks a cell that can
- * never be reached; it is tested because it must still be filled in. */
-
-static void check_step_closed(void) {
-    CHECK(steps_to(CLOSED, E_REMOTE,                OPENING, A_NONE));
-    CHECK(steps_to(CLOSED, E_REMOTE_FROZEN,         CLOSED,  A_REFUSE_FROZEN));
-    CHECK(steps_to(CLOSED, E_REMOTE_BARRIER,        OPENING, A_NONE));
-    CHECK(steps_to(CLOSED, E_REMOTE_FROZEN_BARRIER, CLOSED,  A_REFUSE_FROZEN));
-    CHECK(steps_to(CLOSED, E_BARRIER,               CLOSED,  A_NONE));
-    CHECK(steps_to(CLOSED, E_TIMEOUT,               CLOSED,  A_NONE));  /* † */
-}
-
-static void check_step_opening(void) {
-    CHECK(steps_to(OPENING, E_REMOTE,                CLOSING, A_NONE));
-    CHECK(steps_to(OPENING, E_REMOTE_FROZEN,         CLOSING, A_NONE));
-    CHECK(steps_to(OPENING, E_REMOTE_BARRIER,        OPENING, A_REFUSE_BARRIER));
-    CHECK(steps_to(OPENING, E_REMOTE_FROZEN_BARRIER, OPENING, A_REFUSE_BARRIER));
-    CHECK(steps_to(OPENING, E_BARRIER,               OPENING, A_NONE));
-    CHECK(steps_to(OPENING, E_TIMEOUT,               OPEN,    A_NONE));
-}
-
-static void check_step_open(void) {
-    CHECK(steps_to(OPEN, E_REMOTE,                CLOSING, A_NONE));
-    CHECK(steps_to(OPEN, E_REMOTE_FROZEN,         CLOSING, A_NONE));
-    CHECK(steps_to(OPEN, E_REMOTE_BARRIER,        OPEN,    A_REFUSE_BARRIER));
-    CHECK(steps_to(OPEN, E_REMOTE_FROZEN_BARRIER, OPEN,    A_REFUSE_BARRIER));
-    CHECK(steps_to(OPEN, E_BARRIER,               OPEN,    A_NONE));
-    CHECK(steps_to(OPEN, E_TIMEOUT,               OPEN,    A_NONE));  /* † */
-}
-
-static void check_step_closing(void) {
-    CHECK(steps_to(CLOSING, E_REMOTE,                OPENING,    A_NONE));
-    CHECK(steps_to(CLOSING, E_REMOTE_FROZEN,         OPENING,    A_NONE));
-    CHECK(steps_to(CLOSING, E_REMOTE_BARRIER,        OBSTRUCTED, A_OBSTRUCT));  /* † */
-    CHECK(steps_to(CLOSING, E_REMOTE_FROZEN_BARRIER, OBSTRUCTED, A_OBSTRUCT));  /* † */
-    CHECK(steps_to(CLOSING, E_BARRIER,               OBSTRUCTED, A_OBSTRUCT));
-    CHECK(steps_to(CLOSING, E_TIMEOUT,               CLOSED,     A_NONE));
-}
-
-static void check_step_obstructed(void) {
-    CHECK(steps_to(OBSTRUCTED, E_REMOTE,                OBSTRUCTED, A_NONE));
-    CHECK(steps_to(OBSTRUCTED, E_REMOTE_FROZEN,         OBSTRUCTED, A_NONE));
-    CHECK(steps_to(OBSTRUCTED, E_REMOTE_BARRIER,        OBSTRUCTED, A_NONE));
-    CHECK(steps_to(OBSTRUCTED, E_REMOTE_FROZEN_BARRIER, OBSTRUCTED, A_NONE));
-    CHECK(steps_to(OBSTRUCTED, E_BARRIER,               OBSTRUCTED, A_NONE));
-    CHECK(steps_to(OBSTRUCTED, E_TIMEOUT,               OPENING,    A_NONE));
-}
-
-/* fsm_remote_pressed */
-
-static void check_pressed_rising_edge(void) {
-    CHECK(fsm_remote_pressed(0x0, 0x1));
-}
-
-static void check_pressed_not_an_edge(void) {
-    CHECK(!fsm_remote_pressed(0x1, 0x1));   /* held: counts once, not again */
-    CHECK(!fsm_remote_pressed(0x1, 0x0));   /* released */
-    CHECK(!fsm_remote_pressed(0x0, 0x0));
-}
-
-static void check_pressed_ignores_barrier(void) {
-    CHECK(fsm_remote_pressed(0x2, 0x3));    /* barrier on throughout */
-    CHECK(!fsm_remote_pressed(0x1, 0x3));   /* barrier came on, REMOTE held */
-    CHECK(!fsm_remote_pressed(0x0, 0x2));   /* barrier alone */
-}
-
-/* fsm_leds: MOTOR_UP is LED 0, MOTOR_DOWN is LED 1 (ASSIGNMENT.md section 3). */
-
-static void check_leds(void) {
-    CHECK(fsm_leds(CLOSED)     == 0x0);
-    CHECK(fsm_leds(OPENING)    == 0x1);
-    CHECK(fsm_leds(OPEN)       == 0x0);
-    CHECK(fsm_leds(CLOSING)    == 0x2);
-    CHECK(fsm_leds(OBSTRUCTED) == 0x0);
-}
-
-/* fsm_tick: sequences. A rig holds the door, its clock, and the last
- * switch reading, and advances one tick at a time through fsm_tick, as main
- * does. */
-
-#define T0   1791273600     /* 2026-10-06 08:00:00 UTC */
-#define WARM 15.0f
-#define COLD 1.0f           /* exactly FREEZE_C: the freeze guard is on */
-#define MILD 1.1f           /* the next reading above FREEZE_C */
-
-typedef struct {
-    door_t door;
-    time_t now;
-    uint32_t prev;
-} rig_t;
-
-/**
- * Starts a rig with the door closed at T0 and every switch off.
- */
-static rig_t start(void) {
-    rig_t r = { .door = { CLOSED, T0, 0 }, .now = T0, .prev = 0 };
-
-    return r;
-}
-
-/**
- * Advances the rig by one tick.
- *
- * @param r      The rig.
- * @param sw     The switch register on this tick.
- * @param temp_c The temperature on this tick.
- * @return The tick's action.
- */
-static action_t tick(rig_t *r, uint32_t sw, float temp_c) {
-    r->now++;
-    action_t a = fsm_tick(&r->door, r->now, r->prev, sw, temp_c);
-    r->prev = sw;
-
-    return a;
-}
-
-/**
- * Advances the rig n ticks with the inputs held.
- *
- * @return true if the door stayed in its state on every one of them.
- */
-static bool stays(rig_t *r, uint32_t sw, float temp_c, int n) {
-    state_t s = r->door.state;
+static bool stays(fsm_t *fsm, const fsm_inputs_t *inputs, state_t s, int n) {
+    fsm_report_t report;
+    bool stayed = true;
 
     for (int i = 0; i < n; i++) {
-        tick(r, sw, temp_c);
-        if (r->door.state != s) return false;
+        fsm_tick(fsm, inputs, &report);
+        stayed = fsm->state == s && stayed;
+    }
+    return stayed;
+}
+
+/**
+ * Checks every cell of the transition table.
+ *
+ * @return true if no cell has the action A_UNDEFINED.
+ */
+static bool no_undefined_transition(void) {
+    for (int s = 0; s < N_STATES; s++) {
+        for (int e = 0; e < N_EVENTS; e++) {
+            action_t action;
+            fsm_step((state_t)s, (event_t)e, &action);
+
+            if (action == A_UNDEFINED) {
+                printf("  undefined: state %s, event %d\n",
+                    fsm_state_name((state_t)s), e);
+                return false;
+            }
+        }
     }
     return true;
 }
 
 /**
- * Advances the rig with the inputs held until the door leaves its state.
+ * Checks the motors of every state.
  *
- * @return The number of ticks it took, or -1 if the door was still in its
- *         state after 100 ticks.
+ * @return true if the up motor runs only while OPENING and the down motor
+ *         only while CLOSING.
  */
-static int ticks_to_leave(rig_t *r, uint32_t sw, float temp_c) {
-    state_t s = r->door.state;
+static bool motors_run_only_while_moving(void) {
+    for (int s = 0; s < N_STATES; s++) {
+        const fsm_outputs_t outputs = fsm_outputs((state_t)s);
 
-    for (int n = 1; n <= 100; n++) {
-        tick(r, sw, temp_c);
-        if (r->door.state != s) return n;
+        if (outputs.motor_up != (s == OPENING)
+            || outputs.motor_down != (s == CLOSING)) {
+            printf("  wrong motors: %s\n", fsm_state_name((state_t)s));
+            return false;
+        }
     }
-    return -1;
+    return true;
 }
 
 /**
- * Starts a rig with the door fully open: a press, then 15 ticks of travel.
+ * Compares the color of every pair of states.
+ *
+ * @return true if no two states have the same color.
  */
-static rig_t start_open(void) {
-    rig_t r = start();
+static bool colors_distinct(void) {
+    for (int a = 0; a < N_STATES; a++) {
+        for (int b = a + 1; b < N_STATES; b++) {
+            const fsm_outputs_t x = fsm_outputs((state_t)a);
+            const fsm_outputs_t y = fsm_outputs((state_t)b);
 
-    tick(&r, SW_REMOTE, WARM);
-    ticks_to_leave(&r, 0, WARM);
-    return r;
+            if (x.red == y.red && x.green == y.green && x.blue == y.blue) {
+                printf("  same color: %s and %s\n",
+                    fsm_state_name((state_t)a), fsm_state_name((state_t)b));
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
-static void check_full_open_and_close(void) {
-    rig_t r = start();
+/**
+ * Packs and unpacks every state with every combination of the three flags.
+ *
+ * @return true if every field comes back as it was packed.
+ */
+static bool unpack_returns_packed_fields(void) {
+    for (int s = 0; s < N_STATES; s++) {
+        for (int flags = 0; flags < 8; flags++) {
+            const fsm_status_t packed = {
+                .state               = (state_t)s,
+                .motor_up            = (flags & 1) != 0,
+                .motor_down          = (flags & 2) != 0,
+                .freeze_guard_active = (flags & 4) != 0,
+            };
+            const fsm_status_t unpacked =
+                fsm_status_unpack(fsm_status_pack(packed));
 
-    CHECK(tick(&r, SW_REMOTE, WARM) == A_NONE);
-    CHECK(r.door.state == OPENING);
-    CHECK(ticks_to_leave(&r, 0, WARM) == 15);           /* rule 1 */
-    CHECK(r.door.state == OPEN);
-
-    CHECK(tick(&r, SW_REMOTE, WARM) == A_NONE);
-    CHECK(r.door.state == CLOSING);
-    CHECK(ticks_to_leave(&r, 0, WARM) == 15);           /* rule 1 */
-    CHECK(r.door.state == CLOSED);
+            if (unpacked.state != packed.state
+                || unpacked.motor_up != packed.motor_up
+                || unpacked.motor_down != packed.motor_down
+                || unpacked.freeze_guard_active != packed.freeze_guard_active) {
+                printf("  round trip: state %s, flags %d\n",
+                    fsm_state_name((state_t)s), flags);
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
-static void check_held_press_counts_once(void) {
-    rig_t r = start();
+/**
+ * Packs every state with all three flags on.
+ *
+ * @return true if every bit outside the fields (0x77) is 0.
+ */
+static bool unused_bits_zero(void) {
+    const uint32_t unused_bits = ~UINT32_C(0x77);
 
-    tick(&r, SW_REMOTE, WARM);
-    CHECK(stays(&r, SW_REMOTE, WARM, 14));              /* still held */
+    for (int s = 0; s < N_STATES; s++) {
+        const fsm_status_t all_flags_on = {
+            .state               = (state_t)s,
+            .motor_up            = true,
+            .motor_down          = true,
+            .freeze_guard_active = true,
+        };
+
+        if ((fsm_status_pack(all_flags_on) & unused_bits) != 0) {
+            printf("  unused bits set: %s\n", fsm_state_name((state_t)s));
+            return false;
+        }
+    }
+    return true;
 }
 
-static void check_freeze_guard(void) {
-    rig_t r = start();
+/**
+ * A new machine starts closed; remote off.
+ */
+static void check_fsm_init_starts_closed_and_at_rest(void) {
+    const fsm_t fsm = fsm_init();
 
-    CHECK(tick(&r, SW_REMOTE, COLD) == A_REFUSE_FROZEN);    /* rule 3 */
-    CHECK(r.door.state == CLOSED);
-    tick(&r, 0, COLD);
-    CHECK(tick(&r, SW_REMOTE | SW_BARRIER, COLD) == A_REFUSE_FROZEN);
-    CHECK(r.door.state == CLOSED);
-    tick(&r, 0, MILD);
-    CHECK(tick(&r, SW_REMOTE, MILD) == A_NONE);         /* the guard clears */
-    CHECK(r.door.state == OPENING);
+    CHECK(fsm.state == CLOSED);
+    CHECK(!fsm.remote_was_on);
+    CHECK(fsm.position == 0);
+    CHECK(fsm.pause_ticks_left == 0);
 }
 
-static void check_cold_does_not_matter_once_open(void) {
-    rig_t r = start_open();
-
-    CHECK(tick(&r, SW_REMOTE, COLD) == A_NONE);
-    CHECK(r.door.state == CLOSING);
+/**
+ * Every cell of the transition table is filled in. A cell left out of the
+ * table's initializer is zeroed, which gives it the action A_UNDEFINED.
+ */
+static void check_fsm_step_has_no_undefined_transition(void) {
+    CHECK(no_undefined_transition());
 }
 
-static void check_opens_with_barrier_on(void) {
-    rig_t r = start();
+/**
+ * Normal operation: Remote press opens the initially closed garage door.
+ * Once it is open, a second remote press closes it again. No logged events.
+ *
+ * CLOSED -> OPENING -> OPEN -> CLOSING -> CLOSED.
+ */
+static void check_fsm_step_normal_operation(void) {
+    state_t state = CLOSED;
+    action_t action;
 
-    CHECK(tick(&r, SW_REMOTE | SW_BARRIER, WARM) == A_NONE);
-    CHECK(r.door.state == OPENING);
+    state = fsm_step(state, E_REMOTE_PRESSED, &action);
+    CHECK(state == OPENING);
+    CHECK(action == A_NONE);
+
+    state = fsm_step(state, E_TIMER_EXPIRED, &action);
+    CHECK(state == OPEN);
+    CHECK(action == A_NONE);
+
+    state = fsm_step(state, E_REMOTE_PRESSED, &action);
+    CHECK(state == CLOSING);
+    CHECK(action == A_NONE);
+
+    state = fsm_step(state, E_TIMER_EXPIRED, &action);
+    CHECK(state == CLOSED);
+    CHECK(action == A_NONE);
 }
 
-static void check_barrier_refuses_close(void) {
-    rig_t r = start_open();
+/**
+ * A blocked light barrier stops a closing door and logs the
+ * obstruction. When the pause is over, the door opens again. No logged event.
+ *
+ * CLOSING -> OBSTRUCTED -> OPENING.
+ */
+static void check_fsm_step_obstruction_while_closing(void) {
+    state_t state = CLOSING;
+    action_t action;
 
-    CHECK(stays(&r, SW_BARRIER, WARM, 3));              /* barrier alone */
-    CHECK(tick(&r, SW_REMOTE | SW_BARRIER, WARM) == A_REFUSE_BARRIER);
-    CHECK(r.door.state == OPEN);
+    state = fsm_step(state, E_BARRIER_BLOCKED, &action);
+    CHECK(state == OBSTRUCTED);
+    CHECK(action == A_LOG_OBSTRUCTION);
 
-    r = start();
-    tick(&r, SW_REMOTE, WARM);
-    tick(&r, 0, WARM);
-    CHECK(tick(&r, SW_REMOTE | SW_BARRIER, WARM) == A_REFUSE_BARRIER);
-    CHECK(r.door.state == OPENING);
+    state = fsm_step(state, E_TIMER_EXPIRED, &action);
+    CHECK(state == OPENING);
+    CHECK(action == A_NONE);
 }
 
-/* A reversal travels back only as far as the door had gone. A position
- * snapshot taken after the state change, instead of before, gets these
- * lengths wrong. */
-static void check_reversal_mid_travel(void) {
-    rig_t r = start();
+/**
+ * A remote press at or below 1.0 C is refused while the door is
+ * closed. The door stays closed and the refusal is logged.
+ *
+ * CLOSED -> CLOSED.
+ */
+static void check_fsm_step_freezing_press_refused_when_closed(void) {
+    state_t state = CLOSED;
+    action_t action;
 
-    tick(&r, SW_REMOTE, WARM);                          /* OPENING from 0 */
-    CHECK(stays(&r, 0, WARM, 5));                       /* at 5 */
-    tick(&r, SW_REMOTE, WARM);                          /* at 6: reverse */
-    CHECK(r.door.state == CLOSING);
-    CHECK(ticks_to_leave(&r, 0, WARM) == 6);
-    CHECK(r.door.state == CLOSED);
-
-    r = start_open();
-    tick(&r, SW_REMOTE, WARM);                          /* CLOSING from 15 */
-    CHECK(stays(&r, 0, WARM, 3));                       /* at 12 */
-    tick(&r, SW_REMOTE, WARM);                          /* at 11: reverse */
-    CHECK(r.door.state == OPENING);
-    CHECK(ticks_to_leave(&r, 0, WARM) == 4);
-    CHECK(r.door.state == OPEN);
+    state = fsm_step(state, E_REMOTE_PRESSED_FREEZING, &action);
+    CHECK(state == CLOSED);
+    CHECK(action == A_LOG_REFUSAL);
 }
 
-static void check_obstruction(void) {
-    rig_t r = start_open();
+/**
+ * A remote press reverses a door that is in motion.
+ *
+ * OPENING -> CLOSING, and CLOSING -> OPENING.
+ */
+static void check_fsm_step_press_reverses_moving_door(void) {
+    state_t state;
+    action_t action;
 
-    tick(&r, SW_REMOTE, WARM);                          /* CLOSING from 15 */
-    CHECK(stays(&r, 0, WARM, 5));                       /* at 10 */
-    CHECK(tick(&r, SW_BARRIER, WARM) == A_OBSTRUCT);    /* at 9: rule 2 */
-    CHECK(r.door.state == OBSTRUCTED);
-    CHECK(ticks_to_leave(&r, SW_BARRIER, WARM) == 2);   /* barrier still on */
-    CHECK(r.door.state == OPENING);
-    CHECK(ticks_to_leave(&r, 0, WARM) == 6);            /* 9 to 15 */
-    CHECK(r.door.state == OPEN);
+    state = fsm_step(OPENING, E_REMOTE_PRESSED, &action);
+    CHECK(state == CLOSING);
+    CHECK(action == A_NONE);
+
+    state = fsm_step(CLOSING, E_REMOTE_PRESSED, &action);
+    CHECK(state == OPENING);
+    CHECK(action == A_NONE);
 }
 
-static void check_presses_ignored_during_pause(void) {
-    rig_t r = start_open();
+/**
+ * The freeze guard applies only to a closed door. In any other
+ * state a press at or below 1.0 C acts like a press above it, and no refusal
+ * is logged.
+ *
+ * OPENING -> CLOSING, OPEN -> CLOSING, and CLOSING -> OPENING.
+ */
+static void check_fsm_step_freezing_press_allowed_when_not_closed(void) {
+    state_t state;
+    action_t action;
 
-    tick(&r, SW_REMOTE, WARM);
-    tick(&r, 0, WARM);
-    tick(&r, SW_BARRIER, WARM);                         /* OBSTRUCTED at 13 */
-    CHECK(tick(&r, SW_REMOTE, WARM) == A_NONE);         /* during the pause */
-    CHECK(r.door.state == OBSTRUCTED);
-    tick(&r, 0, WARM);
-    CHECK(r.door.state == OPENING);                     /* pause over */
+    state = fsm_step(OPENING, E_REMOTE_PRESSED_FREEZING, &action);
+    CHECK(state == CLOSING);
+    CHECK(action == A_NONE);
+
+    state = fsm_step(OPEN, E_REMOTE_PRESSED_FREEZING, &action);
+    CHECK(state == CLOSING);
+    CHECK(action == A_NONE);
+
+    state = fsm_step(CLOSING, E_REMOTE_PRESSED_FREEZING, &action);
+    CHECK(state == OPENING);
+    CHECK(action == A_NONE);
 }
 
-/* Press before timeout: a press on a state's last tick is looked up in that
- * state. */
-static void check_press_on_last_tick(void) {
-    rig_t r = start();
+/**
+ * A blocked light barrier is ignored unless the door is closing.
+ * The state does not change and no obstruction is logged.
+ */
+static void check_fsm_step_barrier_ignored_when_not_closing(void) {
+    state_t state;
+    action_t action;
 
-    tick(&r, SW_REMOTE, WARM);
-    CHECK(stays(&r, 0, WARM, 14));
-    CHECK(tick(&r, SW_REMOTE, WARM) == A_NONE);         /* OPENING's last */
-    CHECK(r.door.state == CLOSING);
-    CHECK(ticks_to_leave(&r, 0, WARM) == 15);
+    state = fsm_step(CLOSED, E_BARRIER_BLOCKED, &action);
+    CHECK(state == CLOSED);
+    CHECK(action == A_NONE);
 
-    r = start_open();
-    tick(&r, SW_REMOTE, WARM);
-    CHECK(stays(&r, 0, WARM, 14));
-    CHECK(tick(&r, SW_REMOTE, COLD) == A_NONE);         /* CLOSING's last */
-    CHECK(r.door.state == OPENING);                     /* not refused */
-    CHECK(ticks_to_leave(&r, 0, WARM) == 15);
+    state = fsm_step(OPENING, E_BARRIER_BLOCKED, &action);
+    CHECK(state == OPENING);
+    CHECK(action == A_NONE);
+
+    state = fsm_step(OPEN, E_BARRIER_BLOCKED, &action);
+    CHECK(state == OPEN);
+    CHECK(action == A_NONE);
+
+    state = fsm_step(OBSTRUCTED, E_BARRIER_BLOCKED, &action);
+    CHECK(state == OBSTRUCTED);
+    CHECK(action == A_NONE);
 }
 
-static void check_press_as_pause_ends(void) {
-    rig_t r = start_open();
+/**
+ * A remote press is ignored while the door is obstructed, regardless of
+ * temperature, and is not logged as a refusal.
+ */
+static void check_fsm_step_press_ignored_when_obstructed(void) {
+    state_t state;
+    action_t action;
 
-    tick(&r, SW_REMOTE, WARM);
-    tick(&r, 0, WARM);
-    tick(&r, SW_BARRIER, WARM);                         /* OBSTRUCTED at 13 */
-    tick(&r, 0, WARM);
-    CHECK(tick(&r, SW_REMOTE, WARM) == A_NONE);         /* the pause's last */
-    CHECK(r.door.state == OPENING);                     /* press ignored */
-    CHECK(ticks_to_leave(&r, 0, WARM) == 2);            /* 13 to 15 */
+    state = fsm_step(OBSTRUCTED, E_REMOTE_PRESSED, &action);
+    CHECK(state == OBSTRUCTED);
+    CHECK(action == A_NONE);
+
+    state = fsm_step(OBSTRUCTED, E_REMOTE_PRESSED_FREEZING, &action);
+    CHECK(state == OBSTRUCTED);
+    CHECK(action == A_NONE);
 }
 
-/* The barrier on CLOSING's last tick stops the door at 0. Under the old
- * order (timeout before press), a press as the pause ended then entered
- * CLOSING with no time allowed, and the next tick reached position -1. */
-static void check_barrier_on_last_tick(void) {
-    rig_t r = start_open();
+/**
+ * A remote press opens the closed garage door in 15 ticks. The door is
+ * OPENING on the tick of the press and the 14 ticks after it, and OPEN on
+ * the tick after those.
+ */
+static void check_fsm_tick_press_opens_door_in_15_ticks(void) {
+    const fsm_inputs_t press = {.remote_on = true, .temp_c = 15.0f};
+    const fsm_inputs_t idle = {.remote_on = false, .temp_c = 15.0f};
+    fsm_t fsm = fsm_init();
+    fsm_report_t report;
 
-    tick(&r, SW_REMOTE, WARM);
-    CHECK(stays(&r, 0, WARM, 14));
-    CHECK(tick(&r, SW_BARRIER, WARM) == A_OBSTRUCT);    /* at 0 */
-    CHECK(r.door.state == OBSTRUCTED);
-    tick(&r, 0, WARM);
-    tick(&r, SW_REMOTE, WARM);                          /* the pause's last */
-    CHECK(r.door.state == OPENING);
-    CHECK(ticks_to_leave(&r, 0, WARM) == 15);
-    CHECK(r.door.state == OPEN);
+    fsm_tick(&fsm, &press, &report);
+    CHECK(fsm.state == OPENING);
+    CHECK(report.remote_pressed);
+
+    bool stayed_opening = true;
+    bool pressed_again = false;
+
+    for (int i = 0; i < 14; i++) {
+        fsm_tick(&fsm, &idle, &report);
+        stayed_opening = fsm.state == OPENING && stayed_opening;
+        pressed_again = report.remote_pressed || pressed_again;
+    }
+    CHECK(stayed_opening);
+    CHECK(!pressed_again);
+
+    fsm_tick(&fsm, &idle, &report);
+    CHECK(fsm.state == OPEN);
 }
 
-/* state_name, event_name, action_name */
+/**
+ * A remote press closes an open garage door in 15 ticks. The door is
+ * CLOSING on the tick of the press and the 14 ticks after it, and CLOSED on
+ * the tick after those.
+ */
+static void check_fsm_tick_press_closes_door_in_15_ticks(void) {
+    const fsm_inputs_t press = {.remote_on = true, .temp_c = 15.0f};
+    const fsm_inputs_t idle = {.remote_on = false, .temp_c = 15.0f};
+    fsm_t fsm = {.state = OPEN, .position = 15};
+    fsm_report_t report;
 
-static void check_state_name(void) {
-    CHECK(strcmp(state_name(CLOSED),     "CLOSED")     == 0);
-    CHECK(strcmp(state_name(OPENING),    "OPENING")    == 0);
-    CHECK(strcmp(state_name(OPEN),       "OPEN")       == 0);
-    CHECK(strcmp(state_name(CLOSING),    "CLOSING")    == 0);
-    CHECK(strcmp(state_name(OBSTRUCTED), "OBSTRUCTED") == 0);
+    fsm_tick(&fsm, &press, &report);
+    CHECK(fsm.state == CLOSING);
+
+    CHECK(stays(&fsm, &idle, CLOSING, 14));
+
+    fsm_tick(&fsm, &idle, &report);
+    CHECK(fsm.state == CLOSED);
+    CHECK(fsm.position == 0);
 }
 
-static void check_state_name_out_of_range(void) {
-    CHECK(strcmp(state_name(N_STATES),     "?") == 0);  /* one past the end */
-    CHECK(strcmp(state_name((state_t)-1), "?") == 0);
+/**
+ * Holding the remote on counts as a single press. A second press
+ * requires the remote to be released and turned on again.
+ */
+static void check_fsm_tick_held_remote_is_one_press(void) {
+    const fsm_inputs_t held = {.remote_on = true, .temp_c = 15.0f};
+    const fsm_inputs_t released = {.remote_on = false, .temp_c = 15.0f};
+    fsm_t fsm = fsm_init();
+    fsm_report_t report;
+
+    fsm_tick(&fsm, &held, &report);
+    CHECK(report.remote_pressed);
+    CHECK(fsm.state == OPENING);
+
+    fsm_tick(&fsm, &held, &report);
+    CHECK(!report.remote_pressed);
+    CHECK(fsm.state == OPENING);
+
+    fsm_tick(&fsm, &released, &report);
+    CHECK(!report.remote_pressed);
+    CHECK(fsm.state == OPENING);
+
+    fsm_tick(&fsm, &held, &report);
+    CHECK(report.remote_pressed);
+    CHECK(fsm.state == CLOSING);
 }
 
-static void check_event_name(void) {
-    CHECK(strcmp(event_name(E_REMOTE),                "REMOTE")                == 0);
-    CHECK(strcmp(event_name(E_REMOTE_FROZEN),         "REMOTE_FROZEN")         == 0);
-    CHECK(strcmp(event_name(E_REMOTE_BARRIER),        "REMOTE_BARRIER")        == 0);
-    CHECK(strcmp(event_name(E_REMOTE_FROZEN_BARRIER), "REMOTE_FROZEN_BARRIER") == 0);
-    CHECK(strcmp(event_name(E_BARRIER),               "BARRIER")               == 0);
-    CHECK(strcmp(event_name(E_TIMEOUT),               "TIMEOUT")               == 0);
+/**
+ * When the garage door reverses its travel, it goes back only as far as
+ * it has already gone.
+ *
+ * The door still moves one step on the tick of the press, and then reverses.
+ * A door at position 4 therefore reverses from position 5 and is CLOSED
+ * 5 ticks later.
+ */
+static void check_fsm_tick_reversal_takes_distance_travelled(void) {
+    const fsm_inputs_t press = {.remote_on = true, .temp_c = 15.0f};
+    const fsm_inputs_t idle = {.remote_on = false, .temp_c = 15.0f};
+    fsm_t fsm = {.state = OPENING, .position = 4};
+    fsm_report_t report;
+
+    fsm_tick(&fsm, &press, &report);
+    CHECK(fsm.state == CLOSING);
+    CHECK(fsm.position == 5);
+
+    CHECK(stays(&fsm, &idle, CLOSING, 4));
+
+    fsm_tick(&fsm, &idle, &report);
+    CHECK(fsm.state == CLOSED);
+    CHECK(fsm.position == 0);
 }
 
-static void check_event_name_out_of_range(void) {
-    CHECK(strcmp(event_name(N_EVENTS),     "?") == 0);  /* one past the end */
-    CHECK(strcmp(event_name((event_t)-1), "?") == 0);
+/**
+ * The light barrier stops a closing garage door for 2 ticks when it
+ * detects an object in the door's path, then the door begins to open again,
+ * and the obstruction is reported.
+ */
+static void check_fsm_tick_obstruction_pauses_then_reopens(void) {
+    const fsm_inputs_t blocked = {.barrier_blocked = true, .temp_c = 15.0f};
+    const fsm_inputs_t idle = {.barrier_blocked = false, .temp_c = 15.0f};
+    fsm_t fsm = {.state = CLOSING, .position = 3};
+    fsm_report_t report;
+
+    fsm_tick(&fsm, &blocked, &report);
+    CHECK(fsm.state == OBSTRUCTED);
+    CHECK(report.obstruction_detected);
+    CHECK(fsm.position == 3);
+
+    fsm_tick(&fsm, &blocked, &report);
+    CHECK(fsm.state == OBSTRUCTED);
+    CHECK(!report.obstruction_detected);
+    CHECK(fsm.position == 3);
+
+    fsm_tick(&fsm, &blocked, &report);
+    CHECK(fsm.state == OPENING);
+    CHECK(fsm.position == 3);
+
+    CHECK(stays(&fsm, &idle, OPENING, 11));
+
+    fsm_tick(&fsm, &idle, &report);
+    CHECK(fsm.state == OPEN);
 }
 
-static void check_action_name(void) {
-    CHECK(strcmp(action_name(A_UNDEFINED),      "UNDEFINED")      == 0);
-    CHECK(strcmp(action_name(A_NONE),           "NONE")           == 0);
-    CHECK(strcmp(action_name(A_OBSTRUCT),       "OBSTRUCT")       == 0);
-    CHECK(strcmp(action_name(A_REFUSE_FROZEN),  "REFUSE_FROZEN")  == 0);
-    CHECK(strcmp(action_name(A_REFUSE_BARRIER), "REFUSE_BARRIER") == 0);
+/**
+ * The light barrier is checked before completion is checked. The garage
+ * door stops instead of moving on the tick it would have finished closing.
+ */
+static void check_fsm_tick_barrier_precedes_completion(void) {
+    const fsm_inputs_t blocked = {.barrier_blocked = true, .temp_c = 15.0f};
+    fsm_t fsm = {.state = CLOSING, .position = 1};
+    fsm_report_t report;
+
+    fsm_tick(&fsm, &blocked, &report);
+    CHECK(fsm.state == OBSTRUCTED);
+    CHECK(report.obstruction_detected);
+    CHECK(fsm.position == 1);
 }
 
-static void check_action_name_out_of_range(void) {
-    CHECK(strcmp(action_name(N_ACTIONS),     "?") == 0);  /* one past the end */
-    CHECK(strcmp(action_name((action_t)-1), "?") == 0);
+/**
+ * A remote press at exactly 1.0 C is refused while the door is closed,
+ * and is reported as both a press and a refusal. At 1.1 C it opens the door.
+ */
+static void check_fsm_tick_freezing_press_refused_when_closed(void) {
+    const fsm_inputs_t freezing_press = {.remote_on = true, .temp_c = 1.0f};
+    const fsm_inputs_t warm_press = {.remote_on = true, .temp_c = 1.1f};
+    fsm_report_t report;
+
+    fsm_t fsm = fsm_init();
+    fsm_tick(&fsm, &freezing_press, &report);
+    CHECK(fsm.state == CLOSED);
+    CHECK(report.remote_pressed);
+    CHECK(report.press_refused);
+
+    fsm = fsm_init();
+    fsm_tick(&fsm, &warm_press, &report);
+    CHECK(fsm.state == OPENING);
+    CHECK(report.remote_pressed);
+    CHECK(!report.press_refused);
 }
 
-/* fsm_rgb: written out from SPEC.md. */
-static bool rgb_is(state_t s, uint8_t red, uint8_t green, uint8_t blue) {
-    rgb_t c = fsm_rgb(s);
+/**
+ * The freeze guard is active when:
+ *
+ *      1) the garage door is closed, and
+ *      2) it is at or below 1.0 C.
+ *
+ * Both are judged at the end of the tick. When the garage door finishes
+ * closing, the freeze guard becomes active on that same tick.
+ */
+static void check_fsm_tick_freeze_guard_active_when_closed_and_cold(void) {
+    const fsm_inputs_t cold = {.temp_c = 1.0f};
+    const fsm_inputs_t warm = {.temp_c = 1.1f};
+    fsm_report_t report;
 
-    return c.red == red && c.green == green && c.blue == blue;
+    fsm_t fsm = fsm_init();
+    fsm_tick(&fsm, &cold, &report);
+    CHECK(report.freeze_guard_active);
+
+    fsm_tick(&fsm, &warm, &report);
+    CHECK(!report.freeze_guard_active);
+
+    fsm = (fsm_t){.state = OPEN, .position = 15};
+    fsm_tick(&fsm, &cold, &report);
+    CHECK(!report.freeze_guard_active);
+
+    fsm = (fsm_t){.state = CLOSING, .position = 1};
+    fsm_tick(&fsm, &cold, &report);
+    CHECK(fsm.state == CLOSED);
+    CHECK(report.freeze_guard_active);
 }
 
-static void check_rgb(void) {
-    CHECK(rgb_is(CLOSED,       0, 255,   0));   /* green */
-    CHECK(rgb_is(OPENING,      0, 255, 255));   /* cyan */
-    CHECK(rgb_is(OPEN,         0,   0, 255));   /* blue */
-    CHECK(rgb_is(CLOSING,    255, 255,   0));   /* yellow */
-    CHECK(rgb_is(OBSTRUCTED, 255,   0,   0));   /* red */
+/**
+ * The up motor runs only while the door is opening, and the down motor
+ * only while it is closing. In every other state, both motors are off.
+ */
+static void check_fsm_outputs_motor_runs_only_while_door_moves(void) {
+    CHECK(motors_run_only_while_moving());
 }
 
-/* fsm_freeze_active: rule 3 needs both CLOSED and the cold. */
-static void check_freeze_active(void) {
-    /* CLOSED, either side of FREEZE_C */
-    CHECK(fsm_freeze_active(CLOSED, 1.0f));
-    CHECK(fsm_freeze_active(CLOSED, 0.9f));
-    CHECK(fsm_freeze_active(CLOSED, -50.0f));
-    CHECK(!fsm_freeze_active(CLOSED, 1.1f));
-    /* the cold does not matter in any other state */
-    CHECK(!fsm_freeze_active(OPENING, 0.5f));
-    CHECK(!fsm_freeze_active(OPEN, 0.5f));
-    CHECK(!fsm_freeze_active(CLOSING, 0.5f));
-    CHECK(!fsm_freeze_active(OBSTRUCTED, 0.5f));
+/**
+ * Each state has its own color, so no two states look the same.
+ */
+static void check_fsm_outputs_color_is_distinct_per_state(void) {
+    CHECK(colors_distinct());
+}
+
+/**
+ * Packing a status word and unpacking it again gives back every field,
+ * for every state and every combination of the three flags.
+ */
+static void check_fsm_status_unpack_returns_packed_fields(void) {
+    CHECK(unpack_returns_packed_fields());
+}
+
+/**
+ * Every bit of a status word outside its four fields is 0. The fields
+ * are bits 0 to 2 and bits 4 to 6, so the used bits are 0x77.
+ */
+static void check_fsm_status_unused_bits_are_zero(void) {
+    CHECK(unused_bits_zero());
+}
+
+/**
+ * Each field has a fixed place in the status word. The state is the
+ * low hex digit, and the next digit holds the up motor (bit 4), the down
+ * motor (bit 5), and the freeze guard (bit 6).
+ */
+static void check_fsm_status_pack_places_each_field(void) {
+    const fsm_status_t opening = {.state = OPENING, .motor_up = true};
+    const fsm_status_t closing = {.state = CLOSING, .motor_down = true};
+    const fsm_status_t guarded = {.state = CLOSED, .freeze_guard_active = true};
+
+    CHECK(fsm_status_pack(opening) == 0x00000011);
+    CHECK(fsm_status_pack(closing) == 0x00000023);
+    CHECK(fsm_status_pack(guarded) == 0x00000040);
 }
 
 void run_fsm_tests(void) {
-    /* fsm_step */
-    check_step_closed();
-    check_step_opening();
-    check_step_open();
-    check_step_closing();
-    check_step_obstructed();
-    /* fsm_remote_pressed */
-    check_pressed_rising_edge();
-    check_pressed_not_an_edge();
-    check_pressed_ignores_barrier();
-    /* fsm_leds */
-    check_leds();
-    /* fsm_rgb */
-    check_rgb();
-    /* fsm_freeze_active */
-    check_freeze_active();
-    /* fsm_tick */
-    check_full_open_and_close();
-    check_held_press_counts_once();
-    check_freeze_guard();
-    check_cold_does_not_matter_once_open();
-    check_opens_with_barrier_on();
-    check_barrier_refuses_close();
-    check_reversal_mid_travel();
-    check_obstruction();
-    check_presses_ignored_during_pause();
-    check_press_on_last_tick();
-    check_press_as_pause_ends();
-    check_barrier_on_last_tick();
-    /* names */
-    check_state_name();
-    check_state_name_out_of_range();
-    check_event_name();
-    check_event_name_out_of_range();
-    check_action_name();
-    check_action_name_out_of_range();
+    check_fsm_init_starts_closed_and_at_rest();
+    check_fsm_step_has_no_undefined_transition();
+    check_fsm_step_normal_operation();
+    check_fsm_step_obstruction_while_closing();
+    check_fsm_step_freezing_press_refused_when_closed();
+    check_fsm_step_press_reverses_moving_door();
+    check_fsm_step_freezing_press_allowed_when_not_closed();
+    check_fsm_step_barrier_ignored_when_not_closing();
+    check_fsm_step_press_ignored_when_obstructed();
+    check_fsm_tick_press_opens_door_in_15_ticks();
+    check_fsm_tick_press_closes_door_in_15_ticks();
+    check_fsm_tick_held_remote_is_one_press();
+    check_fsm_tick_reversal_takes_distance_travelled();
+    check_fsm_tick_obstruction_pauses_then_reopens();
+    check_fsm_tick_barrier_precedes_completion();
+    check_fsm_tick_freezing_press_refused_when_closed();
+    check_fsm_tick_freeze_guard_active_when_closed_and_cold();
+    check_fsm_outputs_motor_runs_only_while_door_moves();
+    check_fsm_outputs_color_is_distinct_per_state();
+    check_fsm_status_unpack_returns_packed_fields();
+    check_fsm_status_unused_bits_are_zero();
+    check_fsm_status_pack_places_each_field();
 }

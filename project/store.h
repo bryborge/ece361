@@ -1,18 +1,11 @@
-/*
- * store.h:
- *
- * The store keeps every record the device makes, ordered by temperature
- * quantized to 0.5 °C (key K2): 21.2 and 21.4 °C have the same key. Records
- * with the same key are kept in the order they were inserted.
- *
- * Passing NULL where a store, record, or output array is expected is a bug
- * in the caller, and aborts with an assert. Every function that takes a
- * store_t assumes it came from store_create and has not been passed to
- * store_destroy since.
+/**
+ * @file store.h
+ * @brief The record store.
  */
 #ifndef STORE_H
 #define STORE_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "fsm.h"
@@ -20,64 +13,104 @@
 
 typedef struct {
     reading_t reading;
-    state_t state;      /* the state at the moment of the reading */
-    uint32_t status;    /* the status word at that moment */
+    state_t state;
+    uint32_t status;
 } record_t;
 
+/**
+ * A binary search tree of records, ordered by key.
+ */
 typedef struct store store_t;
 
 /**
- * Given two records, compares their temperatures quantized to 0.5 °C.
- * Returns a negative number, 0, or a positive number as a's key is below,
- * equal to, or above b's.
+ * Compare two records by key. The key is the temperature in 0.5 °C steps:
+ * each step runs from a multiple of 0.5 °C up to, but not including, the next.
+ * Asserts that no argument is NULL.
+ *
+ * @param a The first record.
+ * @param b The second record.
+ * @return A negative number, zero, or a positive number when a's key is less
+ *         than, equal to, or greater than b's.
  */
 int record_compare(const record_t *a, const record_t *b);
 
 /**
- * Returns a new, empty store, or NULL if the store is already in use.
+ * Create an empty store.
+ *
+ * @return The store, or NULL if memory could not be allocated.
  */
 store_t *store_create(void);
 
 /**
- * Given a store s, releases it so that store_create can hand it out again.
- * Does nothing if s is NULL.
- */
-void store_destroy(store_t *s);
-
-/**
- * Given a store s and a record r, inserts a copy of r after any records
- * with the same key. Returns 0, or -1 and changes nothing if s is full.
- */
-int store_insert(store_t *s, const record_t *r);
-
-/**
- * Given a store s, a temperature, and an array out of max records, copies
- * every record whose key is the key of temp_c into out, in insertion order,
- * up to max of them. Returns how many records match, which is more than
- * were copied if out was too small.
- */
-int store_find(const store_t *s, float temp_c, record_t out[], int max);
-
-/**
- * Given a store s and an array out of max records, copies every record into
- * out, in key order and insertion order within a key, up to max of them.
- * Returns how many records s holds, which is more than were copied if out
- * was too small.
+ * Destroy a store and every record in it. Does nothing if store is NULL.
  *
- * The sheet asks for a walk with a callback. That needs function pointers,
- * which the course has not covered yet, so the walk copies out until the
- * week-8 tree, when it takes a callback instead.
+ * @param store The store to destroy.
  */
-int store_walk(const store_t *s, record_t out[], int max);
+void store_destroy(store_t *store);
 
 /**
- * Given a store s, returns how many records it holds.
+ * Count the records in a store, including every record that shares a key.
+ * Asserts that store is not NULL.
+ *
+ * @param store The store to count.
+ * @return The number of records.
  */
-int store_count(const store_t *s);
+size_t store_count(const store_t *store);
 
 /**
- * Given a store s, returns its height: 0 when empty, 1 for a single key.
+ * Insert a copy of a record. Records with the same key are kept in the order
+ * they were inserted. Asserts that no argument is NULL.
+ *
+ * @param store  The store to insert into.
+ * @param record The record to copy into the store.
+ * @return 0 on success, or 1 if memory could not be allocated. The store is
+ *         unchanged on failure.
  */
-int store_height(const store_t *s);
+int store_insert(store_t *store, const record_t *record);
+
+/**
+ * Count the nodes along the longest path from the root down. Records that
+ * share a key share a node, so they don't add to the height. An empty store
+ * has a height of 0, and a store with one key has a height of 1. Asserts that
+ * store is not NULL.
+ *
+ * @param store The store to measure.
+ * @return The height of the tree.
+ */
+size_t store_height(const store_t *store);
+
+/**
+ * Find every record with the same key as a given record. The records are
+ * given back as an array, in the order they were inserted. The array belongs
+ * to the store and stays valid only until the next insert or destroy. Asserts
+ * that no argument is NULL.
+ *
+ * @param store   The store to search.
+ * @param key     A record with the key to find. Only its temperature is used.
+ * @param records Where a pointer to the records is stored. Not written if no
+ *                record has the key.
+ * @param count   Where the number of records is stored. Not written if no
+ *                record has the key.
+ * @return 0 if records with the key were found, or 1 if none were.
+ */
+int store_find(
+    const store_t *store, const record_t *key,
+    const record_t **records, size_t *count
+);
+
+/**
+ * Visit every record in key order. Records with the same key are visited in
+ * the order they were inserted. The store must not be changed during the
+ * walk. Asserts that store and visit are not NULL.
+ *
+ * @param store   The store to walk.
+ * @param visit   Called once for each record, with the record and context.
+ * @param context Passed to every call of visit, unchanged. May be NULL.
+ */
+void store_walk(
+    const store_t *store,
+    void (*visit)(const record_t *record, void *context),
+    void *context
+);
 
 #endif

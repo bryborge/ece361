@@ -1,15 +1,15 @@
-# Scenario 3: thresholds. The only threshold in the rules is FREEZE_C,
-# 1.0 C (rule 3; humidity has none, SPEC.md). At exactly 1.0 C the freeze
-# guard is on and REMOTE in CLOSED is refused; at 1.1 C, the next reading
-# above it, REMOTE opens the door. Comments give the state the door should
-# be in.
+# Thresholds: the freeze guard's threshold of 1.0 C, set to exactly its value
+# and to 0.1 C on either side. A press is refused at 0.9 C and at 1.0 C, and
+# opens the door at 1.1 C.
 start 1791273600                # 2026-10-06 08:00:00 UTC
 # tick  temp   rh    switches
-0       1.0    60    0x0        # CLOSED
-2       1.0    60    0x1        # REMOTE at exactly 1.0: refused, CLOSED
-3       1.0    60    0x0        # released
-5       1.1    60    0x0        # just above the threshold
-7       1.1    60    0x1        # REMOTE at 1.1: OPENING
-8       1.1    60    0x0        # released
-22      1.1    60    0x0        # OPEN (15 ticks after the press)
-25      1.1    60    0x0        # still OPEN
+0       0.9    60    0x0      # below the threshold
+2       0.9    60    0x1      # REMOTE pressed: refused
+3       0.9    60    0x0      # and released
+5       1.0    60    0x0      # exactly the threshold
+7       1.0    60    0x1      # REMOTE pressed: refused
+8       1.0    60    0x0      # and released
+10      1.1    60    0x0      # above the threshold
+12      1.1    60    0x1      # REMOTE pressed: the door opens
+13      1.1    60    0x0      # and released
+28      1.1    60    0x0

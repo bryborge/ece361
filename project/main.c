@@ -1,173 +1,411 @@
-/*
- * Entry point for the garage door opener, the ECE 361 final project.
- *
- * main initializes the iom361 hardware model, then replays a scenario file
- * one tick (one second) at a time: read the sensor and switches, run the
- * state machine, drive the LEDs and RGB LED, and store a record. Only this file
- * sets the "world" with iom361's test functions. Everything else reads it through
- * the registers, as on a board.
- *
- * `./garage scenario.txt` prints a trace line per tick. Still to come: the event
- * stack (week 7) and `./garage scenario.txt --report` (week 9).
+/**
+ * @file main.c
+ * @brief The garage door opener entrypoint.
  */
-#include <assert.h>
+#include <ctype.h>
 #include <errno.h>
-#include <stdbool.h>
-#include <stdint.h>
+#include <inttypes.h>
+#include <limits.h>
+#include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
-#include "clock.h"
-#include "fsm.h"
 #include "iom361_r4.h"
-#include "scenario.h"
+
+#include "aux.h"
+#include "fsm.h"
 #include "sensor.h"
-#include "status.h"
 #include "store.h"
 
-#define NUM_SWITCHES 2
-#define NUM_LEDS 2
+/* Switch register bits. */
+#define SW_REMOTE        (1u << 0)
+#define SW_LIGHT_BARRIER (1u << 1)
 
-static bool register_failed(int tick, int rc) {
-    fprintf(stderr, "garage: tick %d: register access failed (code %d)\n", tick, rc);
-    return false;
+/* LED register bits. */
+#define LED_MOTOR_UP     (1u << 0)
+#define LED_MOTOR_DOWN   (1u << 1)
+
+/* The number of history entries printed on an obstruction. */
+#define OBSTRUCTION_HISTORY 3
+
+/* History kinds, as printed. */
+static const char *const history_kind_names[] = {
+    [H_PRESS]       = "PRESS",
+    [H_REFUSAL]     = "REFUSAL",
+    [H_OBSTRUCTION] = "OBSTRUCTION",
+};
+
+/* Scenario file ------------------------------------------------------------ */
+
+#define LINE_SIZE 256
+
+/* A scenario file that is being read. */
+typedef struct {
+    const char *path;
+    FILE *file;
+    int line_number;
+} scenario_t;
+
+/* A change to the world. From its tick on, the values hold until the next. */
+typedef struct {
+    int tick;
+    float temp_c;
+    float rh_pct;
+    uint32_t switches;
+} world_t;
+
+/**
+ * Report a problem with the line of the scenario that was read last.
+ */
+static void scenario_error(const scenario_t *scenario, const char *message) {
+    fprintf(stderr, "%s:%d: %s\n",
+        scenario->path, scenario->line_number, message);
 }
 
 /**
- * Writes the state's LEDs and RGB color. The state decides every LED, so a plain
- * write is right here, with no read first.
- *
- * @param leds Where to store what the LED register holds afterward.
- * @return 0, or the iom361 return code of a failed write.
+ * Check that only whitespace is left in a string.
  */
-static int write_outputs(uint32_t *base, state_t state, uint32_t *leds) {
-    int rc;
+static bool is_blank(const char *text) {
+    while (isspace((unsigned char)*text)) text++;
 
-    *leds = iom361_writeReg(base, LEDS_REG, fsm_leds(state), &rc);
-    if (rc != 0) return rc;
-
-    rgb_t color = fsm_rgb(state);
-    iom361_writeReg(base, RGB_LED_REG,
-                    build_rgb_reg(1, color.red, color.green, color.blue), &rc);
-    return rc;
+    return *text == '\0';
 }
 
 /**
- * Runs the device for one tick: sets the world from the line in force, reads it
- * back through the registers, runs the state machine, writes the outputs, stores
- * a record, and prints a trace line.
+ * Read the next line of a scenario that holds content. A comment runs from
+ * '#' to the end of its line and is removed. Lines left blank are skipped.
  *
- * @param door  The door; updated by the tick.
- * @param prev  The last tick's switches; updated by the tick.
- * @return true, or false after reporting a failure on stderr.
+ * @return 1 if a line was read, 0 at the end of the file, or -1 after
+ *         reporting an error.
  */
-static bool run_tick(const scenario_t *s, uint32_t *base, store_t *store, door_t *door,
-                     int tick, uint32_t *prev) {
-    const scenario_line_t *line = scenario_at(s, tick);
-    _iom361_set_sensor1(line->temp_c, line->rh_pct);
-    _iom361_set_switches(line->switches);
+static int scenario_read_line(scenario_t *scenario, char line[LINE_SIZE]) {
+    while (fgets(line, LINE_SIZE, scenario->file) != NULL) {
+        scenario->line_number++;
 
-    reading_t r;
-    int rc = sensor_read(base, s->start + tick, &r);
-    if (rc != 0) return register_failed(tick, rc);
+        if (strchr(line, '\n') == NULL && !feof(scenario->file)) {
+            scenario_error(scenario, "the line is too long");
+            return -1;
+        }
 
-    uint32_t switches = iom361_readReg(base, SWITCHES_REG, &rc);
-    if (rc != 0) return register_failed(tick, rc);
+        char *comment = strchr(line, '#');
+        if (comment != NULL) *comment = '\0';
 
-    /* The tick's action goes onto the event stack in week 7. */
-    fsm_tick(door, r.timestamp, *prev, switches, r.temp_c);
+        if (!is_blank(line)) return 1;
+    }
 
-    uint32_t leds;
-    rc = write_outputs(base, door->state, &leds);
-    if (rc != 0) return register_failed(tick, rc);
+    if (ferror(scenario->file)) {
+        scenario_error(scenario, "the file could not be read");
+        return -1;
+    }
 
-    status_t status = status_of(door->state, r.temp_c);
-    uint32_t word = status_pack(&status);
+    return 0;
+}
 
-    record_t record = { .reading = r, .state = door->state, .status = word };
-    if (store_insert(store, &record) != 0) {
-        fprintf(stderr, "garage: tick %d: store full\n", tick);
+/**
+ * Read the start line of a scenario: the word "start" and a Unix timestamp.
+ *
+ * @return true on success, or false after reporting an error.
+ */
+static bool scenario_read_start(scenario_t *scenario, time_t *start) {
+    char line[LINE_SIZE];
+    if (scenario_read_line(scenario, line) != 1) {
+        if (!ferror(scenario->file)) {
+            scenario_error(scenario, "expected \"start\" and a timestamp");
+        }
         return false;
     }
 
-    char when[CLOCK_TEXT_SIZE];
-    if (clock_format(r.timestamp, when) != 0) {
-        fprintf(stderr, "garage: tick %d: time out of range\n", tick);
+    const char *text = line;
+    while (isspace((unsigned char)*text)) text++;
+
+    char *end;
+    errno = 0;
+    const long long seconds =
+        strncmp(text, "start", 5) == 0 && isspace((unsigned char)text[5])
+            ? strtoll(text + 5, &end, 10)
+            : -1;
+
+    if (seconds < 0 || errno != 0 || end == text + 5 || !is_blank(end)) {
+        scenario_error(scenario, "expected \"start\" and a timestamp");
         return false;
     }
-    printf("%s state=%s temp=%.1f rh=%.1f leds=0x%x status=0x%08x\n", when,
-           state_name(door->state), r.temp_c, r.rh_pct, leds, word);
 
-    /* Saved last: a press is off in the last tick and on in this one. */
-    *prev = switches;
+    *start = (time_t)seconds;
     return true;
 }
 
 /**
- * Runs every tick from 0 to the last one.
+ * Read the next change of a scenario: a tick, a temperature, a humidity, and
+ * the switch register in hexadecimal.
  *
- * @return true, or false after reporting a failure on stderr.
+ * @return 1 if a change was read, 0 at the end of the file, or -1 after
+ *         reporting an error.
  */
-static bool replay(const scenario_t *s, uint32_t *base, store_t *store) {
-    door_t door = { .state = CLOSED, .entered_at = s->start, .pos_at_entry = 0 };
-    uint32_t prev = 0;
-    int last = s->lines[s->count - 1].tick;
+static int scenario_read_change(scenario_t *scenario, world_t *change) {
+    char line[LINE_SIZE];
+    const int rc = scenario_read_line(scenario, line);
+    if (rc != 1) return rc;
 
-    /* The stop test is not in the loop header. A last tick of INT_MAX is accepted,
-     * so tick <= last could never be false, and tick++ would overflow. */
-    for (int tick = 0; ; tick++) {
-        if (!run_tick(s, base, store, &door, tick, &prev)) return false;
-        if (tick == last) return true;
+    char *end;
+    errno = 0;
+
+    const long tick = strtol(line, &end, 10);
+    bool valid = end != line && tick >= 0 && tick <= INT_MAX;
+
+    const char *text = end;
+    const float temp_c = strtof(text, &end);
+    valid = valid && end != text && isfinite(temp_c);
+
+    text = end;
+    const float rh_pct = strtof(text, &end);
+    valid = valid && end != text && isfinite(rh_pct);
+
+    text = end;
+    const unsigned long switches = strtoul(text, &end, 16);
+    valid = valid && end != text && switches <= UINT32_MAX;
+
+    if (!valid || errno != 0 || !is_blank(end)) {
+        scenario_error(scenario,
+            "expected a tick, a temperature, a humidity, and the switches");
+        return -1;
     }
+
+    *change = (world_t){
+        .tick     = (int)tick,
+        .temp_c   = temp_c,
+        .rh_pct   = rh_pct,
+        .switches = (uint32_t)switches,
+    };
+    return 1;
 }
 
-int main(int argc, char **argv) {
-    /* An entry left out of the table reads as { CLOSED, A_UNDEFINED }. Stop
-     * before the door runs, including on an entry no input would reach. */
-    for (state_t st = 0; st < N_STATES; st++) {
-        for (event_t e = 0; e < N_EVENTS; e++) {
-            assert(fsm_table[st][e].action != A_UNDEFINED);
+/* Replay ------------------------------------------------------------------- */
+
+/**
+ * Run the device for one tick: read the inputs, run the state machine, write
+ * the outputs, store a record, record what happened in the history, and print
+ * a trace line.
+ *
+ * @return 0 on success, or 1 after reporting an error.
+ */
+static int run_tick(
+    uint32_t *base, fsm_t *fsm, store_t *store, history_t *history,
+    time_t start, int tick
+) {
+    const time_t now = start + tick;
+
+    /* Read the inputs. */
+    reading_t reading;
+    int rc = sensor_read(base, now, &reading);
+    if (rc != 0) {
+        fprintf(stderr, "sensor_read failed: %d\n", rc);
+        return 1;
+    }
+
+    const uint32_t switches = iom361_readReg(base, SWITCHES_REG, &rc);
+    if (rc != 0) {
+        fprintf(stderr, "reading the switches failed: %d\n", rc);
+        return 1;
+    }
+
+    /* Run the state machine. */
+    const fsm_inputs_t inputs = {
+        .remote_on       = (switches & SW_REMOTE) != 0,
+        .barrier_blocked = (switches & SW_LIGHT_BARRIER) != 0,
+        .temp_c          = reading.temp_c,
+    };
+    fsm_report_t report;
+    fsm_tick(fsm, &inputs, &report);
+
+    /* Write the outputs. */
+    const fsm_outputs_t outputs = fsm_outputs(fsm->state);
+    const uint32_t leds = (outputs.motor_up ? LED_MOTOR_UP : 0u)
+                        | (outputs.motor_down ? LED_MOTOR_DOWN : 0u);
+
+    iom361_writeReg(base, LEDS_REG, leds, &rc);
+    if (rc != 0) {
+        fprintf(stderr, "writing the LEDs failed: %d\n", rc);
+        return 1;
+    }
+
+    iom361_writeReg(base, RGB_LED_REG,
+        build_rgb_reg(1, outputs.red, outputs.green, outputs.blue), &rc);
+    if (rc != 0) {
+        fprintf(stderr, "writing the RGB LED failed: %d\n", rc);
+        return 1;
+    }
+
+    /* Store a record of the tick. */
+    const uint32_t status = fsm_status_pack((fsm_status_t){
+        .state               = fsm->state,
+        .motor_up            = outputs.motor_up,
+        .motor_down          = outputs.motor_down,
+        .freeze_guard_active = report.freeze_guard_active,
+    });
+
+    const record_t record = {
+        .reading = reading,
+        .state   = fsm->state,
+        .status  = status,
+    };
+    if (store_insert(store, &record) != 0) {
+        fprintf(stderr, "storing the record failed: out of memory\n");
+        return 1;
+    }
+
+    /* Record what happened in the order fsm_tick handled it. */
+    if (report.obstruction_detected) {
+        const history_entry_t entry = { .kind = H_OBSTRUCTION, .tick = tick };
+        if (history_push(history, entry) != 0) {
+            fprintf(stderr,
+                "recording the obstruction failed: out of memory\n");
+            return 1;
         }
     }
 
-    /* --report is a usage error until week 9: see "Where we are" in CLAUDE.md. */
+    if (report.remote_pressed) {
+        const history_entry_t entry = { .kind = H_PRESS, .tick = tick };
+        if (history_push(history, entry) != 0) {
+            fprintf(stderr, "recording the press failed: out of memory\n");
+            return 1;
+        }
+    }
+
+    if (report.press_refused) {
+        const history_entry_t entry = { .kind = H_REFUSAL, .tick = tick };
+        if (history_push(history, entry) != 0) {
+            fprintf(stderr, "recording the refusal failed: out of memory\n");
+            return 1;
+        }
+    }
+
+    /* Print the trace line. */
+    char timestamp[20];
+    rc = sensor_format_timestamp(reading.timestamp, timestamp);
+    if (rc != 0) {
+        fprintf(stderr, "formatting the timestamp failed: %d\n", rc);
+        return 1;
+    }
+
+    printf("%s state=%s temp=%.1f rh=%.1f leds=0x%" PRIX32
+        " status=0x%08" PRIX32 "\n",
+        timestamp, fsm_state_name(fsm->state), reading.temp_c,
+        reading.rh_pct, leds, status);
+
+    /*
+     * On an obstruction, print the most recent entries, top first. Popping is
+     * the only way to see below the top, so they are pushed back afterwards
+     * in reverse order, leaving the history as it was.
+     */
+    if (report.obstruction_detected) {
+        history_entry_t last[OBSTRUCTION_HISTORY];
+        size_t popped = 0;
+
+        while (popped < OBSTRUCTION_HISTORY
+               && history_pop(history, &last[popped]) == 0) {
+            popped++;
+        }
+
+        for (size_t i = 0; i < popped; i++) {
+            printf("  history tick=%d event=%s\n",
+                last[i].tick, history_kind_names[last[i].kind]);
+        }
+
+        while (popped > 0) {
+            popped--;
+            if (history_push(history, last[popped]) != 0) {
+                fprintf(stderr,
+                    "restoring the history failed: out of memory\n");
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * Replay a scenario from its start line to the tick of its last change.
+ *
+ * @return 0 on success, or 1 after reporting an error.
+ */
+static int replay(
+    scenario_t *scenario, uint32_t *base, store_t *store, history_t *history
+) {
+    time_t start;
+    if (!scenario_read_start(scenario, &start)) return 1;
+
+    world_t next;
+    int more = scenario_read_change(scenario, &next);
+    fsm_t fsm = fsm_init();
+
+    for (int tick = 0; more == 1; tick++) {
+        /* Play the world. */
+        if (next.tick == tick) {
+            _iom361_set_sensor1(next.temp_c, next.rh_pct);
+            _iom361_set_switches(next.switches);
+
+            more = scenario_read_change(scenario, &next);
+            if (more == -1) return 1;
+
+            if (more == 1 && next.tick <= tick) {
+                scenario_error(scenario, "the tick must be after the last");
+                return 1;
+            }
+        }
+
+        if (run_tick(base, &fsm, store, history, start, tick) != 0) return 1;
+    }
+
+    return more == 0 ? 0 : 1;
+}
+
+/**
+ * Program entry point.
+ */
+int main(int argc, char *argv[]) {
     if (argc != 2) {
-        fprintf(stderr, "usage: garage scenario.txt\n");
-        return 1;
-    }
-    const char *path = argv[1];
-
-    FILE *fp = fopen(path, "r");
-    if (fp == NULL) {
-        fprintf(stderr, "garage: %s: %s\n", path, strerror(errno));
-        return 1;
-    }
-
-    scenario_t s;
-    int bad_line = scenario_load(fp, &s);
-    fclose(fp);
-    if (bad_line != 0) {
-        fprintf(stderr, "garage: %s: line %d: invalid scenario line\n", path, bad_line);
+        fprintf(stderr, "usage: %s SCENARIO\n", argv[0]);
         return 1;
     }
 
     int rc;
-    uint32_t *base = iom361_initialize(NUM_SWITCHES, NUM_LEDS, &rc);
+    uint32_t *base = iom361_initialize(2, 2, &rc);
+
     if (base == NULL) {
-        fprintf(stderr, "garage: iom361_initialize failed (code %d)\n", rc);
+        fprintf(stderr, "iom361_initialize failed: %d\n", rc);
         return 1;
     }
-    /* The LED display would print into the trace. */
+
+    /* Keep the model's LED display out of the trace. */
     iom361_set_display(false);
+
+    scenario_t scenario = {.path = argv[1], .file = fopen(argv[1], "r")};
+    if (scenario.file == NULL) {
+        fprintf(stderr, "%s: %s\n", scenario.path, strerror(errno));
+        return 1;
+    }
+
+    history_t *history = history_create();
+    if (history == NULL) {
+        fprintf(stderr, "creating the history failed: out of memory\n");
+        fclose(scenario.file);
+        return 1;
+    }
 
     store_t *store = store_create();
     if (store == NULL) {
-        fprintf(stderr, "garage: store_create failed\n");
+        fprintf(stderr, "creating the store failed: out of memory\n");
+        history_destroy(history);
+        fclose(scenario.file);
         return 1;
     }
 
-    bool ok = replay(&s, base, store);
+    rc = replay(&scenario, base, store, history);
     store_destroy(store);
-    return ok ? 0 : 1;
+    history_destroy(history);
+    fclose(scenario.file);
+
+    return rc;
 }
