@@ -89,6 +89,12 @@ If a push fails because the history is full and more memory can't be allocated, 
 
 If storing a record fails because more memory can't be allocated, `main` reports it and the replay stops, for the same reasons as [when the history can't grow](#when-the-history-cant-grow).
 
+## The given states
+
+`CLOSED`, `OPEN`, and `OBSTRUCTED` all have the motor off, but a press opens a closed door, closes an open one, and is ignored by an obstructed one, so merging any two of them would leave the transition table unable to say what a press does. Every state is also reachable, and every state has at least one event that moves it to another.
+
+Between fully closed and fully open, the door is always moving or obstructed, so a press during travel can't stop it; the only choice left was to reverse it. Many real garage door openers stop the door on a press instead, and move it the other way on the next press. The five states also don't say where the door is. That lives in a separate counter, the door position, which the machine needs in order to know when travel is finished and how far to go back after a reversal. A sixth state, `STOPPED`, would close the first gap, but the position counter would still be needed, because no fixed number of states can count steps.
+
 ## Events
 
 The state machine reacts to events, not to raw inputs. Each tick, the inputs are turned into events as follows.
@@ -101,6 +107,18 @@ The state machine reacts to events, not to raw inputs. Each tick, the inputs are
 | `E_TIMER_EXPIRED` | A moving door reached the end of its travel, or an obstructed door reached the end of its pause |
 
 A remote that is held on produces one press. It must be released and turned on again to produce a second.
+
+### Where the events are made
+
+The events are made in `fsm.c`, by `fsm_tick`. Each tick, `main.c` reads the registers and passes `fsm_tick` three plain inputs: whether the remote is on, whether the light barrier is blocked, and the temperature. `fsm_tick` turns them into events, in the order described in [Order of events within a tick](#order-of-events-within-a-tick), and looks up each one in the transition table with `fsm_step`.
+
+The split follows what each side needs to know:
+
+- `main.c` is the only code that knows about iom361: the register offsets, which bit is which switch, and the return codes. The bits become `true` or `false` there, so the state machine never sees a register.
+- Making the events needs the machine's own memory. A press is the remote going from off to on, so it needs the remote's level on the previous tick, which the machine keeps. `E_TIMER_EXPIRED` comes from the door's position and the obstruction pause, which are counters the machine keeps too. The 1.0 °C freeze threshold and the order of events within a tick are rules of the machine as well. If `main.c` made the events, it would have to read and change the machine's internals, and the rules for one door would be split across two files.
+- The tests for `fsm.c` drive `fsm_tick` with plain inputs, without iom361. So every rule, including what counts as a press, the timing, and the order within a tick, is tested in one place.
+
+Making the events in `main.c` would have kept `fsm.c` to the table lookup alone, which is simpler on its own. But `main.c` would then need to keep the door's position and the pause to make `E_TIMER_EXPIRED`, and at that point it would hold half of the machine.
 
 ## Transition table
 
@@ -134,6 +152,43 @@ The actions are:
 | `A_NONE` | Nothing is recorded |
 | `A_LOG_REFUSAL` | A refused remote press is recorded |
 | `A_LOG_OBSTRUCTION` | An obstruction is recorded |
+
+### Diagram
+
+```
+     press, freezing
+     +---+
+     v   |
+  +----------+ press  +-----------------------------+  timer  +--------+
+  |  CLOSED  |------->|           OPENING           |-------->|  OPEN  |
+  +----------+        +-----------------------------+         +--------+
+       ^                  |         ^         ^                   |
+       |                  |         |         |                   |
+       |                  | press*  |         | timer             |
+       | timer            |         | press*  |                   |
+       |                  |         |         |                   |
+       |                  |         |   +--------------+          | press*
+       |                  |         |   |  OBSTRUCTED  |          |
+       |                  |         |   +--------------+          |
+       |                  |         |         ^                   |
+       |                  |         |         | barrier           |
+       |                  v         |         |                   |
+  +-------------------------------------------------------+       |
+  |                        CLOSING                        |<------+
+  +-------------------------------------------------------+
+```
+
+The arrows are labeled with the events:
+
+| Label | Event |
+|---|---|
+| `press` | `E_REMOTE_PRESSED` |
+| `press, freezing` | `E_REMOTE_PRESSED_FREEZING`: the door stays `CLOSED` and the refusal is recorded (`A_LOG_REFUSAL`) |
+| `press*` | Either press event, `E_REMOTE_PRESSED` or `E_REMOTE_PRESSED_FREEZING` |
+| `timer` | `E_TIMER_EXPIRED` |
+| `barrier` | `E_BARRIER_BLOCKED`: the obstruction is recorded (`A_LOG_OBSTRUCTION`) |
+
+Every other event leaves the state as it is and does nothing, so those are not drawn.
 
 ## Outputs
 
@@ -244,6 +299,43 @@ The simpler way to handle duplicates is to give every record its own node and se
 Keeping each array oldest first means records with the same key come out of a search, and out of the walk, in the order they were stored. That's time order.
 
 This doesn't keep the tree balanced. A temperature that rises or falls steadily through many steps still makes a chain, the same way inserting keys in sorted order does. But that chain can only be as long as the number of different steps the temperature passes through, about 200 between -40 and 60 °C, not the number of ticks.
+
+## Report
+
+The report is the moving average of the garage temperature over a window of 20 readings. `./garage scenario.txt --report` replays the scenario without printing the trace, and then prints the report.
+
+### What it prints
+
+The report goes through every record in the store in time order, one record per tick. Each record with at least 19 records before it gets one line: its timestamp, and the average temperature of it and those 19 records. For example:
+
+```
+2026-10-06 08:00:19 avg=15.1
+2026-10-06 08:00:20 avg=15.1
+```
+
+The timestamp is printed the same way as in the trace, and the average with one decimal, like `temp=` in the trace.
+
+The first 19 readings don't get a line, because there aren't 20 readings to average yet. A replay of fewer than 20 ticks prints nothing at all, and that isn't an error.
+
+The window size is a parameter of `report_print`, and `main` passes 20.
+
+### Getting the records in time order
+
+The store is ordered by temperature, and the report can only use what `store.h` offers. None of its functions gives the records in time order. So the report walks the store, collects a pointer to every record, and sorts the pointers by timestamp with `qsort`.
+
+The other way would be a walk in time order in `store.h`. But then the store would have to keep a second ordering inside it, only for the report. Collecting and sorting happens once, after the replay, and costs O(n log n).
+
+The report collects pointers rather than copies, because the records already live in the store and the report doesn't change it. Two records never have the same timestamp, because a replay stores exactly one record per tick.
+
+### Rounding
+
+The average of 20 readings can land exactly halfway between two tenths. For example, ten readings at 15.0 °C and ten at 15.1 °C average 15.05 °C. Floats can't hold most tenths exactly, so whether 15.05 printed as 15.0 or 15.1 would depend on tiny errors in how the numbers happen to be stored. The report avoids that by doing the arithmetic in whole numbers.
+
+1. Each temperature becomes a whole number of tenths of a degree: 15.1 °C becomes 151. This is exact, because `sensor.c` already rounds every reading to 0.1 °C.
+2. The sum of the window is kept as a whole number. As the window slides, the reading that enters is added and the reading that leaves is subtracted. Whole numbers add and subtract exactly, so the sum never drifts, however long the replay.
+3. The average is the sum divided by 20, rounded to the nearest tenth. Halves round away from zero: 15.05 °C becomes 15.1 °C, and -1.05 °C becomes -1.1 °C. This is the only rounding in the report.
+
+Scenario 6 checks three halves: 15.05 and 7.05 °C, which round up, and -1.05 °C, which rounds down.
 
 ## The year 2038
 

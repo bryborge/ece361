@@ -4,9 +4,9 @@ This is the final project for ECE361 - Computer System Organization at Portland 
 
 ## Assignment and Specification
 
-The project assignment details are captured in the assignment document found in [ASSIGNMENT.md](ASSIGNMENT.md).
+The project assignment details are captured in the assignment document found in [ASSIGNMENT.md](docs/ASSIGNMENT.md).
 
-The project spec can be found in [SPEC.md](SPEC.md).
+The project spec can be found in [SPEC.md](docs/SPEC.md).
 
 ## Getting Started
 
@@ -21,10 +21,16 @@ The project spec can be found in [SPEC.md](SPEC.md).
 make
 ```
 
-The program executable is in `build/garage`. It replays a scenario file, for example:
+The program executable is in `build/garage`. It replays a scenario file and prints one trace line per tick, for example:
 
 ```sh
 ./build/garage scenarios/1_normal.txt
+```
+
+With `--report` after the scenario, it replays the scenario without printing the trace, and then prints the moving average of the temperature over 20 readings:
+
+```sh
+./build/garage scenarios/6_report.txt --report
 ```
 
 `make clean` removes everything that was built.
@@ -37,4 +43,4 @@ make test
 
 This builds and runs every unit test and scenario test, printing PASS or FAIL for each check, and ends with one line giving the number that passed and failed. Everything is built with AddressSanitizer and UndefinedBehaviorSanitizer, so a leak or undefined behavior also fails the run.
 
-Each scenario test replays `scenarios/<name>.txt` and compares what the program prints with `scenarios/<name>.expected`.
+Each scenario test replays `scenarios/<name>.txt` and compares what the program prints with `scenarios/<name>.expected`. Scenario 6 is replayed with `--report`, so its expected output is the report rather than the trace.
