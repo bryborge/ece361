@@ -15,6 +15,7 @@
 
 #include "aux.h"
 #include "fsm.h"
+#include "report.h"
 #include "sensor.h"
 #include "store.h"
 
@@ -28,6 +29,9 @@
 
 /* The number of history entries printed on an obstruction. */
 #define OBSTRUCTION_HISTORY 3
+
+/* The number of readings the report averages over. */
+#define REPORT_WINDOW 20
 
 /* History kinds, as printed. */
 static const char *const history_kind_names[] = {
@@ -184,14 +188,14 @@ static int scenario_read_change(scenario_t *scenario, world_t *change) {
 
 /**
  * Run the device for one tick: read the inputs, run the state machine, write
- * the outputs, store a record, record what happened in the history, and print
- * a trace line.
+ * the outputs, store a record, record what happened in the history, and, with
+ * trace true, print a trace line.
  *
  * @return 0 on success, or 1 after reporting an error.
  */
 static int run_tick(
     uint32_t *base, fsm_t *fsm, store_t *store, history_t *history,
-    time_t start, int tick
+    time_t start, int tick, bool trace
 ) {
     const time_t now = start + tick;
 
@@ -280,6 +284,9 @@ static int run_tick(
         }
     }
 
+    /* Everything from here on only prints. */
+    if (!trace) return 0;
+
     /* Print the trace line. */
     char timestamp[20];
     rc = sensor_format_timestamp(reading.timestamp, timestamp);
@@ -326,12 +333,15 @@ static int run_tick(
 }
 
 /**
- * Replay a scenario from its start line to the tick of its last change.
+ * Replay a scenario from its start line to the tick of its last change. With
+ * trace false, nothing is printed: the replay only fills the store and the
+ * history.
  *
  * @return 0 on success, or 1 after reporting an error.
  */
 static int replay(
-    scenario_t *scenario, uint32_t *base, store_t *store, history_t *history
+    scenario_t *scenario, uint32_t *base, store_t *store, history_t *history,
+    bool trace
 ) {
     time_t start;
     if (!scenario_read_start(scenario, &start)) return 1;
@@ -355,7 +365,9 @@ static int replay(
             }
         }
 
-        if (run_tick(base, &fsm, store, history, start, tick) != 0) return 1;
+        if (run_tick(base, &fsm, store, history, start, tick, trace) != 0) {
+            return 1;
+        }
     }
 
     return more == 0 ? 0 : 1;
@@ -365,8 +377,9 @@ static int replay(
  * Program entry point.
  */
 int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "usage: %s SCENARIO\n", argv[0]);
+    const bool report_mode = argc == 3 && strcmp(argv[2], "--report") == 0;
+    if (argc != 2 && !report_mode) {
+        fprintf(stderr, "usage: %s SCENARIO [--report]\n", argv[0]);
         return 1;
     }
 
@@ -402,7 +415,15 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    rc = replay(&scenario, base, store, history);
+    rc = replay(&scenario, base, store, history, !report_mode);
+
+    if (rc == 0 && report_mode) {
+        if (report_print(store, REPORT_WINDOW, stdout) != 0) {
+            fprintf(stderr, "printing the report failed\n");
+            rc = 1;
+        }
+    }
+
     store_destroy(store);
     history_destroy(history);
     fclose(scenario.file);

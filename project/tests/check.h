@@ -25,6 +25,7 @@ void run_sensor_tests(void);
 void run_fsm_tests(void);
 void run_aux_tests(void);
 void run_store_tests(void);
+void run_report_tests(void);
 void run_replay_tests(void);
 
 #endif
