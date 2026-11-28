@@ -43,14 +43,15 @@ static bool files_match(const char *path_a, const char *path_b) {
 }
 
 /**
- * Replays scenarios/<name>.txt, and checks that it succeeds and prints exactly
+ * Replays scenarios/<name>.txt with the given flags ("" for none, or
+ * "--report"), and checks that it succeeds and prints exactly
  * scenarios/<name>.expected.
  */
-static bool replays_as_expected(const char *name) {
+static bool replays_as_expected(const char *name, const char *flags) {
     char command[128];
     char expected[128];
     int n = snprintf(command, sizeof command,
-                     "build/garage scenarios/%s.txt > " OUT, name);
+                     "build/garage scenarios/%s.txt %s > " OUT, name, flags);
 
     assert(n > 0 && (size_t)n < sizeof command);
     snprintf(expected, sizeof expected, "scenarios/%s.expected", name);
@@ -58,10 +59,11 @@ static bool replays_as_expected(const char *name) {
 }
 
 void run_replay_tests(void) {
-    CHECK(replays_as_expected("1_normal"));
-    CHECK(replays_as_expected("2_growth"));
-    CHECK(replays_as_expected("3_thresholds"));
-    CHECK(replays_as_expected("4_freeze_guard"));
-    CHECK(replays_as_expected("5_unexpected_input"));
-    CHECK(replays_as_expected("7_midnight"));
+    CHECK(replays_as_expected("1_normal", ""));
+    CHECK(replays_as_expected("2_growth", ""));
+    CHECK(replays_as_expected("3_thresholds", ""));
+    CHECK(replays_as_expected("4_freeze_guard", ""));
+    CHECK(replays_as_expected("5_unexpected_input", ""));
+    CHECK(replays_as_expected("6_report", "--report"));
+    CHECK(replays_as_expected("7_midnight", ""));
 }
